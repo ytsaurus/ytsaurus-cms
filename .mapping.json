@@ -1,11 +1,9 @@
 {
   "":"yt/admin/cms",
   ".":"yt/opensource/repos/ytsaurus-cms/github_toplevel",
-  "AUTHORS":"yt/opensource/repos/ytsaurus-cms/github_toplevel/AUTHORS",
   "CODE_OF_CONDUCT.md":"yt/opensource/repos/ytsaurus-cms/github_toplevel/CODE_OF_CONDUCT.md",
   "CONTRIBUTING.md":"yt/opensource/repos/ytsaurus-cms/github_toplevel/CONTRIBUTING.md",
   "LICENSE":"yt/opensource/repos/ytsaurus-cms/github_toplevel/LICENSE",
-  "SECURITY.md":"yt/opensource/repos/ytsaurus-cms/github_toplevel/SECURITY.md",
   "cmd/cms/main.go":"yt/admin/cms/cmd/cms/main.go",
   "cmd/cms/maxprocs.go":"yt/admin/cms/cmd/cms/maxprocs.go",
   "cmd/migrate/main.go":"yt/admin/cms/cmd/migrate/main.go",
@@ -15,7 +13,6 @@
   "internal/app/app.go":"yt/admin/cms/internal/app/app.go",
   "internal/app/auth.go":"yt/admin/cms/internal/app/auth.go",
   "internal/app/config.go":"yt/admin/cms/internal/app/config.go",
-  "internal/app/dummy.go":"yt/admin/cms/internal/app/dummy.go",
   "internal/app/helpers.go":"yt/admin/cms/internal/app/helpers.go",
   "internal/app/metrics.go":"yt/admin/cms/internal/app/metrics.go",
   "internal/app/middleware.go":"yt/admin/cms/internal/app/middleware.go",
@@ -66,11 +63,9 @@
   "internal/walle/schema.go":"yt/admin/cms/internal/walle/schema.go",
   "internal/walle/tasks.go":"yt/admin/cms/internal/walle/tasks.go",
   "internal/walle/tasks_test.go":"yt/admin/cms/internal/walle/tasks_test.go",
-  "yt/opensource/repos/ytsaurus-cms/github_toplevel/AUTHORS":"yt/opensource/repos/ytsaurus-cms/github_toplevel/AUTHORS",
   "yt/opensource/repos/ytsaurus-cms/github_toplevel/CODE_OF_CONDUCT.md":"yt/opensource/repos/ytsaurus-cms/github_toplevel/CODE_OF_CONDUCT.md",
   "yt/opensource/repos/ytsaurus-cms/github_toplevel/CONTRIBUTING.md":"yt/opensource/repos/ytsaurus-cms/github_toplevel/CONTRIBUTING.md",
   "yt/opensource/repos/ytsaurus-cms/github_toplevel/LICENSE":"yt/opensource/repos/ytsaurus-cms/github_toplevel/LICENSE",
-  "yt/opensource/repos/ytsaurus-cms/github_toplevel/SECURITY.md":"yt/opensource/repos/ytsaurus-cms/github_toplevel/SECURITY.md",
   "yt/opensource/repos/ytsaurus-cms/github_toplevel/go.mod":"yt/opensource/repos/ytsaurus-cms/github_toplevel/go.mod",
   "yt/opensource/repos/ytsaurus-cms/github_toplevel/go.sum":"yt/opensource/repos/ytsaurus-cms/github_toplevel/go.sum"
 }
