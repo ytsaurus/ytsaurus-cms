@@ -15,6 +15,7 @@
   "internal/app/app.go":"yt/admin/cms/internal/app/app.go",
   "internal/app/auth.go":"yt/admin/cms/internal/app/auth.go",
   "internal/app/config.go":"yt/admin/cms/internal/app/config.go",
+  "internal/app/dummy.go":"yt/admin/cms/internal/app/dummy.go",
   "internal/app/helpers.go":"yt/admin/cms/internal/app/helpers.go",
   "internal/app/metrics.go":"yt/admin/cms/internal/app/metrics.go",
   "internal/app/middleware.go":"yt/admin/cms/internal/app/middleware.go",
