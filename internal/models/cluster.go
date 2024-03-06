@@ -47,9 +47,9 @@ type cluster struct {
 }
 
 // NewCluster initializes new cluster.
-func NewCluster() *cluster {
+func NewCluster(conf *discovery.ClusterConfig) *cluster {
 	return &cluster{
-		Cluster:           discovery.NewCluster(),
+		Cluster:           discovery.NewCluster(conf),
 		decommissionStats: NewDecommissionStats(),
 	}
 }

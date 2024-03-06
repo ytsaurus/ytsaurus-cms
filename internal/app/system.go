@@ -13,6 +13,7 @@ import (
 	"go.ytsaurus.tech/library/go/core/metrics"
 	"go.ytsaurus.tech/yt/admin/cms/internal/cms"
 	"go.ytsaurus.tech/yt/admin/cms/internal/cms/hotswap"
+	"go.ytsaurus.tech/yt/admin/cms/internal/discovery"
 	"go.ytsaurus.tech/yt/admin/cms/internal/models"
 	"go.ytsaurus.tech/yt/go/migrate"
 	"go.ytsaurus.tech/yt/go/schema"
@@ -56,6 +57,7 @@ type SystemConfig struct {
 	TaskProcessorConfig    cms.TaskProcessorConfig        `yaml:",inline"`
 	HotSwapProcessorConfig hotswap.HotSwapProcessorConfig `yaml:"hot_swap"`
 	ColocationConfigs      cms.ColocationConfigs          `yaml:"-"`
+	ClusterDiscoveryConfig discovery.ClusterConfig        `yaml:"cluster_discovery_config"`
 
 	AuthConfig AuthConfig `yaml:"-"`
 }
@@ -108,7 +110,7 @@ func NewSystem(
 	yc yt.Client,
 	l log.Structured,
 ) *System {
-	c := models.NewCluster()
+	c := models.NewCluster(&conf.ClusterDiscoveryConfig)
 	dc := ytsys.NewClient(yc, l)
 
 	s := &System{

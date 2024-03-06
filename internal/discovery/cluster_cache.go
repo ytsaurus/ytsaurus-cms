@@ -18,9 +18,15 @@ type CellBundles struct {
 	BalancerDisabled bool
 }
 
+type ClusterConfig struct {
+	UnmanagedNodeTags []string `yaml:"unmanaged_node_tags"`
+}
+
 // Cluster is a cached cluster state.
 // That includes information about physical addresses, host roles and states.
 type Cluster struct {
+	conf *ClusterConfig
+
 	// mu protects err and map fields.
 	// Map entries are read-only.
 	mu sync.RWMutex
@@ -57,8 +63,9 @@ type Cluster struct {
 }
 
 // NewCluster initializes new cluster.
-func NewCluster() *Cluster {
+func NewCluster(conf *ClusterConfig) *Cluster {
 	return &Cluster{
+		conf:               conf,
 		components:         make(map[ytsys.PhysicalHost]HostComponents),
 		primaryMasters:     make(ytsys.PrimaryMasterMap),
 		secondaryMasters:   make(ytsys.SecondaryMasterMap),
@@ -267,11 +274,18 @@ func (c *Cluster) reloadNodes(ctx context.Context, dc *ytsys.Client) error {
 		return err
 	}
 
-	tabletCommonNodeCount := nodes.GetFreeTabletCommonNodeCount()
-	nodes.SetSlotState()
+	managed := make(ytsys.NodeMap)
+	for a, n := range nodes {
+		if !n.HasAnyTag(c.conf.UnmanagedNodeTags) {
+			managed[a] = n
+		}
+	}
+
+	tabletCommonNodeCount := managed.GetFreeTabletCommonNodeCount()
+	managed.SetSlotState()
 
 	c.mu.Lock()
-	c.nodes = nodes
+	c.nodes = managed
 	c.tabletCommonNodeCount = tabletCommonNodeCount
 	c.mu.Unlock()
 
