@@ -3,6 +3,7 @@ package cms
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -1121,6 +1122,9 @@ func (p *TaskProcessor) checkTabletCellGuarantees(ctx context.Context, r *models
 
 func (p *TaskProcessor) fillNodeFlavors(ctx context.Context, t *models.Task, n *ytsys.Node, r *models.Node) error {
 	if len(n.Flavors) == 0 {
+		return nil
+	}
+	if slices.Equal(r.Flavors, n.Flavors) {
 		return nil
 	}
 	r.Flavors = n.Flavors

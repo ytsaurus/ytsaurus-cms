@@ -565,7 +565,7 @@ func (p *TaskProcessor) run(ctx context.Context) error {
 				p.l.Error("tasks update failed", log.Error(err))
 				p.failedTaskUpdateLoops.Inc()
 			} else {
-				p.l.Info("tasks update succeed")
+				p.l.Info("tasks update succeeded")
 			}
 		}
 	}
