@@ -92,7 +92,7 @@ type TaskProcessorConfig struct {
 	// https://github.com/go-yaml/yaml/issues/125
 	// structs can only be inlined and no pointers are allowed.
 	// todo migrate to v3
-	MissingPartChunksThrottlerConfig MissingPartChunksThrottlerConfig `yaml:",inline"`
+	MissingChunksThrottlerConfig MissingChunksThrottlerConfig `yaml:",inline"`
 
 	OfflineNodeRetentionPeriod time.Duration `yaml:"offline_node_retention_period"`
 	BannedNodeHoldOffPeriod    time.Duration `yaml:"banned_node_hold_off_period"`
@@ -164,7 +164,7 @@ func (c *TaskProcessorConfig) UnmarshalYAML(unmarshal func(interface{}) error) e
 			c.ChunkIntegrityCheckPeriod)
 	}
 
-	c.MissingPartChunksThrottlerConfig.init()
+	c.MissingChunksThrottlerConfig.init()
 
 	if c.MaxParallelGroupTasks <= 0 {
 		c.MaxParallelGroupTasks = defaultMaxParallelGroupTasks
@@ -300,8 +300,8 @@ type TaskProcessor struct {
 	// belonging to a group task.
 	lastBannedNodeGroup string
 
-	chunkIntegrity             *ytsys.ChunkIntegrity
-	missingPartChunksThrottler *MissingPartChunksThrottler
+	chunkIntegrity         *ytsys.ChunkIntegrity
+	missingChunksThrottler *MissingChunksThrottler
 
 	// Metrics.
 	taskProcessingLoop     metrics.Timer
@@ -352,7 +352,7 @@ func NewTaskProcessor(conf *TaskProcessorConfig, l log.Structured, dc DiscoveryC
 }
 
 func (p *TaskProcessor) reset(tasks []*models.Task) {
-	p.resetMissingPartChunksThrottler()
+	p.resetMissingChunksThrottler()
 	p.httpProxyRoleLimits = NewProxyRoleLimits(p.Conf().MaxHTTPProxiesPerRole, &httpProxyCache{c: p.cluster})
 	p.rpcProxyRoleLimits = NewProxyRoleLimits(p.Conf().MaxRPCProxiesPerRole, &rpcProxyCache{c: p.cluster})
 	p.initRateLimiter(tasks)
@@ -360,8 +360,8 @@ func (p *TaskProcessor) reset(tasks []*models.Task) {
 	p.initLastNodeBanTime(tasks)
 }
 
-func (p *TaskProcessor) resetMissingPartChunksThrottler() {
-	p.missingPartChunksThrottler = NewMissingPartChunksThrottler(&p.conf.MissingPartChunksThrottlerConfig)
+func (p *TaskProcessor) resetMissingChunksThrottler() {
+	p.missingChunksThrottler = NewMissingChunksThrottler(&p.conf.MissingChunksThrottlerConfig)
 }
 
 func (p *TaskProcessor) resetReservePool(tasks []*models.Task) {
@@ -594,7 +594,7 @@ func (p *TaskProcessor) runHostAnnotator(ctx context.Context) error {
 
 func (p *TaskProcessor) checkChunkIntegrity(ctx context.Context) error {
 	defer func() {
-		p.missingPartChunksThrottler.OnChunkIntegrityUpdate(p.chunkIntegrity)
+		p.missingChunksThrottler.OnChunkIntegrityUpdate(p.chunkIntegrity)
 	}()
 
 	i, err := p.dc.GetIntegrityIndicators(ctx)
@@ -894,7 +894,7 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 		addNewTask(t)
 	}
 
-	if err := p.missingPartChunksThrottler.Allow(); err != nil {
+	if err := p.missingChunksThrottler.Allow(); err != nil {
 		p.l.Info("throttling task processing due to missing part chunks", log.Error(err))
 		return ret
 	}

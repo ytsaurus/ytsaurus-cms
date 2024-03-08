@@ -8,36 +8,36 @@ import (
 )
 
 const (
-	missingPartChunksThrottlerBlockSize = time.Minute
-	missingPartChunksMaxFailurePeriod   = time.Minute * 45
+	missingChunksThrottlerBlockSize = time.Minute
+	missingChunksMaxFailurePeriod   = time.Minute * 45
 )
 
-type MissingPartChunksThrottlerConfig struct {
+type MissingChunksThrottlerConfig struct {
 	BlockSize time.Duration `yaml:"block_size"`
 	// maxFailurePeriod is a maximum time since the last successful period of time (of BlockSize duration)
 	// without check errors.
 	MaxFailurePeriod time.Duration `yaml:"max_failure_period"`
 }
 
-// NewMissingPartChunksThrottlerConfig creates throttler with default settings.
-func NewMissingPartChunksThrottlerConfig() *MissingPartChunksThrottlerConfig {
-	c := &MissingPartChunksThrottlerConfig{}
+// NewMissingChunksThrottlerConfig creates throttler with default settings.
+func NewMissingChunksThrottlerConfig() *MissingChunksThrottlerConfig {
+	c := &MissingChunksThrottlerConfig{}
 	c.init()
 	return c
 }
 
-func (c *MissingPartChunksThrottlerConfig) init() {
+func (c *MissingChunksThrottlerConfig) init() {
 	if c.BlockSize <= 0 {
-		c.BlockSize = missingPartChunksThrottlerBlockSize
+		c.BlockSize = missingChunksThrottlerBlockSize
 	}
 
 	if c.MaxFailurePeriod <= 0 {
-		c.MaxFailurePeriod = missingPartChunksMaxFailurePeriod
+		c.MaxFailurePeriod = missingChunksMaxFailurePeriod
 	}
 }
 
-func (c *MissingPartChunksThrottlerConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	type plain MissingPartChunksThrottlerConfig
+func (c *MissingChunksThrottlerConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type plain MissingChunksThrottlerConfig
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
@@ -45,15 +45,15 @@ func (c *MissingPartChunksThrottlerConfig) UnmarshalYAML(unmarshal func(interfac
 	return nil
 }
 
-// MissingPartChunksThrottler checks whether task processing must be stopped due to
-// long period of PMC > 0 || DMC > 0.
+// MissingChunksThrottler checks whether task processing must be stopped due to
+// long period of (PMC > 0 || DMC > 0).
 //
 // Namely it returns no error iff the last blockSize of consecutive 'missing part chunks' checks was
 // at most T seconds ago.
 //
 // Throttler is parametrized with a blockSize size and T.
-type MissingPartChunksThrottler struct {
-	conf *MissingPartChunksThrottlerConfig
+type MissingChunksThrottler struct {
+	conf *MissingChunksThrottlerConfig
 	// lastFailure stores local time of the last failed missing part chunks check.
 	lastFailure time.Time
 	// lastSuccess stores local time of the last failed missing part chunks check.
@@ -62,19 +62,19 @@ type MissingPartChunksThrottler struct {
 	lastSuccessfulBlock time.Time
 }
 
-// NewOdinChecker creates new throttler.
-func NewMissingPartChunksThrottler(conf *MissingPartChunksThrottlerConfig) *MissingPartChunksThrottler {
+// NewMissingChunksThrottler creates new throttler.
+func NewMissingChunksThrottler(conf *MissingChunksThrottlerConfig) *MissingChunksThrottler {
 	conf.init()
-	return &MissingPartChunksThrottler{
+	return &MissingChunksThrottler{
 		conf:                conf,
 		lastSuccessfulBlock: time.Now().Add(-conf.MaxFailurePeriod / 2),
 	}
 }
 
 // OnChunkIntegrityUpdate updates throttler state.
-func (t *MissingPartChunksThrottler) OnChunkIntegrityUpdate(i *ytsys.ChunkIntegrity) {
-	missingPartChunks := i == nil || i.PMC > 0 || i.DMC > 0
-	if missingPartChunks {
+func (t *MissingChunksThrottler) OnChunkIntegrityUpdate(i *ytsys.ChunkIntegrity) {
+	missingChunks := i == nil || i.PMC > 0 || i.DMC > 0
+	if missingChunks {
 		t.lastFailure = time.Now()
 		return
 	} else {
@@ -86,7 +86,7 @@ func (t *MissingPartChunksThrottler) OnChunkIntegrityUpdate(i *ytsys.ChunkIntegr
 }
 
 // Allow checks whether last group of 'missing part chunks' checks without failure was recently.
-func (t *MissingPartChunksThrottler) Allow() error {
+func (t *MissingChunksThrottler) Allow() error {
 	if passed := time.Since(t.lastSuccessfulBlock); passed > t.conf.MaxFailurePeriod {
 		return xerrors.Errorf("last %s period without errors was %s ago", t.conf.BlockSize, passed)
 	}

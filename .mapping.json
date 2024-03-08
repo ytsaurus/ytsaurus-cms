@@ -30,7 +30,7 @@
   "internal/cms/hotswap/storage.go":"yt/admin/cms/internal/cms/hotswap/storage.go",
   "internal/cms/http_proxy.go":"yt/admin/cms/internal/cms/http_proxy.go",
   "internal/cms/master.go":"yt/admin/cms/internal/cms/master.go",
-  "internal/cms/missing_part_chunks_throttler.go":"yt/admin/cms/internal/cms/missing_part_chunks_throttler.go",
+  "internal/cms/missing_chunks_throttler.go":"yt/admin/cms/internal/cms/missing_chunks_throttler.go",
   "internal/cms/mocks/storage_mock.go":"yt/admin/cms/internal/cms/mocks/storage_mock.go",
   "internal/cms/node.go":"yt/admin/cms/internal/cms/node.go",
   "internal/cms/proxy_cache_mock.go":"yt/admin/cms/internal/cms/proxy_cache_mock.go",
