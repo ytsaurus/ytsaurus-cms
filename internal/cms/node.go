@@ -20,7 +20,7 @@ const (
 	permanentBanSubstr   = "permanent_ban"
 	banMessageTimeLayout = "2006-01-02T15:04:05 MST"
 
-	safeDecommissionRemovalSlots = 2048
+	safeDecommissionRemovalSlots = 8192
 )
 
 type DecommissionOptions struct {
