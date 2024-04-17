@@ -816,6 +816,7 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 		}
 		p.l.Info("adding task group to processing", log.String("group_id", id))
 
+		scenarioInfo := g.GetScenarioInfo()
 		for _, t := range g {
 			if t.ProcessingState == models.StateNew {
 				if err := p.addNewTaskToProcessing(ctx, t); err != nil {
@@ -823,7 +824,7 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 				}
 			}
 			if !t.IsGroupTask {
-				if err := p.addTaskToGroup(ctx, t); err != nil {
+				if err := p.addTaskToGroup(ctx, t, scenarioInfo); err != nil {
 					continue
 				}
 			}
@@ -1003,8 +1004,9 @@ func (p *TaskProcessor) addNewTaskToProcessing(ctx context.Context, t *models.Ta
 }
 
 // addTaskToGroup marks task as a group task.
-func (p *TaskProcessor) addTaskToGroup(ctx context.Context, t *models.Task) error {
+func (p *TaskProcessor) addTaskToGroup(ctx context.Context, t *models.Task, i *walle.ScenarioInfo) error {
 	t.IsGroupTask = true
+	t.ScenarioInfo = i
 	if err := p.storage.Update(ctx, t); err != nil {
 		p.l.Info("error adding task to group", log.Any("task", t), log.Error(err))
 		p.storageErrors.Inc()

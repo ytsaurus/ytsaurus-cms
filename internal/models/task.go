@@ -249,6 +249,22 @@ func (g TaskGroup) GetGroupID() string {
 	return g[0].MaintenanceInfo.NodeSetID
 }
 
+// GetScenarioInfo returns scenario_info for non-empty task group.
+//
+// Returns nil for empty task group.
+func (g TaskGroup) GetScenarioInfo() *walle.ScenarioInfo {
+	if len(g) == 0 {
+		return nil
+	}
+	// TODO(verytable@) remove when https://st.yandex-team.ru/YPSUPPORT-2012 is resolved.
+	for _, t := range g {
+		if t.ScenarioInfo != nil {
+			return t.ScenarioInfo
+		}
+	}
+	return nil
+}
+
 // YTRole is a string alias to hold all available values of /labels/yt_role.
 type YTRole string
 
