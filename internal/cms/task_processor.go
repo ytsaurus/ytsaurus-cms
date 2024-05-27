@@ -146,6 +146,10 @@ type TaskProcessorConfig struct {
 	// HostAnnotationPeriod is a time between two consecutive requests to Wall-e API
 	// in order to get additional host info.
 	HostAnnotationPeriod time.Duration `yaml:"host_annotation_period"`
+
+	// PodsMovingEnabled enable handling pods moving after the host is shut down.
+	// The components in the task are not deleted if they exist on the cluster.
+	PodsMovingEnabled bool `yaml:"pods_moving_enabled"`
 }
 
 func (c *TaskProcessorConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
@@ -1215,7 +1219,7 @@ func (p *TaskProcessor) preprocessHost(ctx context.Context, t *models.Task, h *m
 
 // updateRoles synchronizes host roles with cluster.
 func (p *TaskProcessor) updateRoles(ctx context.Context, t *models.Task, h *models.Host) {
-	components, ok := p.cluster.GetHostComponents(h.Host)
+	hostComponents, ok := p.cluster.GetHostComponents(h.Host)
 	if !ok {
 		p.l.Info("no cluster components found", log.String("host", h.Host))
 		return
@@ -1223,16 +1227,24 @@ func (p *TaskProcessor) updateRoles(ctx context.Context, t *models.Task, h *mode
 
 	if t.Origin == models.OriginYP {
 		// Filter other roles but the ones corresponding to the task's pod.
-		filtered := make(discovery.HostComponents)
-		for path, c := range components {
+		filtered := make(discovery.Components)
+		for path, c := range hostComponents {
 			if strings.Contains(path.String(), t.YPInfo.PodID) {
 				filtered[path] = c
 			}
 		}
-		components = filtered
+		hostComponents = filtered
 	}
 
-	if changed := h.UpdateRoles(components); changed {
+	if p.conf.PodsMovingEnabled {
+		for path := range h.Roles {
+			if component, ok := p.cluster.GetComponent(path); ok {
+				hostComponents[path] = component
+			}
+		}
+	}
+
+	if changed := h.UpdateRoles(hostComponents); changed {
 		p.l.Info("host component set changed", log.Any("host", h))
 		p.tryUpdateTaskInStorage(ctx, t)
 	} else {

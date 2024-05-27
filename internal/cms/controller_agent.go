@@ -140,7 +140,7 @@ func (p *TaskProcessor) activateControllerAgent(ctx context.Context, r *models.C
 }
 
 func (p *TaskProcessor) resolveControllerAgent(t *models.Task, r *models.ControllerAgent) (*ytsys.ControllerAgent, bool) {
-	c, ok := p.cluster.GetComponent(r.Host, r.Path)
+	c, ok := p.cluster.GetComponent(r.Path)
 	if !ok {
 		p.l.Error("unable to resolve controller agent component", p.controllerAgentLogFields(t, r)...)
 		return nil, false

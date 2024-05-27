@@ -15,9 +15,9 @@ import (
 type Cluster interface {
 	Reload(ctx context.Context, dc *ytsys.Client) error
 
-	GetComponents() map[ytsys.PhysicalHost]discovery.HostComponents
-	GetComponent(host ytsys.PhysicalHost, path ypath.Path) (ytsys.Component, bool)
-	GetHostComponents(host ytsys.PhysicalHost) (discovery.HostComponents, bool)
+	GetComponents() map[ytsys.PhysicalHost]discovery.Components
+	GetComponent(path ypath.Path) (ytsys.Component, bool)
+	GetHostComponents(host ytsys.PhysicalHost) (discovery.Components, bool)
 	LastReloadTime() time.Time
 	Err() error
 

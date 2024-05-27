@@ -11,7 +11,7 @@ import (
 	"go.ytsaurus.tech/yt/go/ytsys"
 )
 
-type HostComponents map[ypath.Path]ytsys.Component
+type Components map[ypath.Path]ytsys.Component
 
 type CellBundles struct {
 	Bundles          []*ytsys.TabletCellBundle
@@ -37,7 +37,8 @@ type Cluster struct {
 	// lastReloadTime stores time of a last reload finished without an error.
 	lastReloadTime time.Time
 
-	components map[ytsys.PhysicalHost]HostComponents
+	hostComponents map[ytsys.PhysicalHost]Components
+	components     Components
 
 	primaryMasters     ytsys.PrimaryMasterMap
 	secondaryMasters   ytsys.SecondaryMasterMap
@@ -66,7 +67,8 @@ type Cluster struct {
 func NewCluster(conf *ClusterConfig) *Cluster {
 	return &Cluster{
 		conf:               conf,
-		components:         make(map[ytsys.PhysicalHost]HostComponents),
+		hostComponents:     make(map[ytsys.PhysicalHost]Components),
+		components:         make(Components),
 		primaryMasters:     make(ytsys.PrimaryMasterMap),
 		secondaryMasters:   make(ytsys.SecondaryMasterMap),
 		timestampProviders: make(ytsys.TimestampProviderMap),
@@ -182,14 +184,15 @@ func (c *Cluster) LastReloadTime() time.Time {
 }
 
 func (c *Cluster) rebuildComponentMap() {
-	components := make(map[ytsys.PhysicalHost]HostComponents)
+	components := make(map[ytsys.PhysicalHost]Components)
 
-	addComponent := func(c ytsys.Component) {
-		h := c.GetPhysicalHost()
+	addComponent := func(component ytsys.Component) {
+		h := component.GetPhysicalHost()
 		if _, ok := components[h]; !ok {
-			components[h] = make(HostComponents)
+			components[h] = make(Components)
 		}
-		components[h][c.GetCypressPath()] = c
+		components[h][component.GetCypressPath()] = component
+		c.components[component.GetCypressPath()] = component
 	}
 
 	for _, n := range c.primaryMasters {
@@ -225,7 +228,7 @@ func (c *Cluster) rebuildComponentMap() {
 	}
 
 	c.mu.Lock()
-	c.components = components
+	c.hostComponents = components
 	c.mu.Unlock()
 }
 
@@ -451,31 +454,35 @@ func (c *Cluster) setBundleSlots(bundles ytsys.TabletCellBundles) error {
 	return nil
 }
 
-func (c *Cluster) GetComponents() map[ytsys.PhysicalHost]HostComponents {
+func (c *Cluster) GetComponents() map[ytsys.PhysicalHost]Components {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return c.components
+	return c.hostComponents
 }
 
-func (c *Cluster) GetHostComponents(host ytsys.PhysicalHost) (HostComponents, bool) {
+func (c *Cluster) GetHostComponents(host ytsys.PhysicalHost) (Components, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	components, ok := c.components[host]
-	return components, ok
-}
-
-func (c *Cluster) GetComponent(host ytsys.PhysicalHost, path ypath.Path) (ytsys.Component, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	components, ok := c.components[host]
+	hostComponents, ok := c.hostComponents[host]
 	if !ok {
-		return nil, false
+		return hostComponents, ok
 	}
 
-	component, ok := components[path]
+	hostComponentsCopy := make(Components)
+	for path, component := range hostComponents {
+		hostComponentsCopy[path] = component
+	}
+
+	return hostComponentsCopy, ok
+}
+
+func (c *Cluster) GetComponent(path ypath.Path) (ytsys.Component, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	component, ok := c.components[path]
 	if !ok {
 		return nil, false
 	}

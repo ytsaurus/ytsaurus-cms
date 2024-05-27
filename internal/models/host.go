@@ -25,7 +25,7 @@ type Host struct {
 	Tickets []startrek.TicketKey `json:"tickets" yson:"tickets"`
 }
 
-func (h *Host) UpdateRoles(components discovery.HostComponents) (changed bool) {
+func (h *Host) UpdateRoles(components discovery.Components) (changed bool) {
 	// Add new roles.
 	for path, c := range components {
 		if _, ok := h.Roles[path]; !ok {

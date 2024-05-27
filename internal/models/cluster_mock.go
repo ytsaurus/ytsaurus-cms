@@ -68,25 +68,25 @@ func (mr *MockClusterMockRecorder) GetChunkIntegrity() *gomock.Call {
 }
 
 // GetComponent mocks base method.
-func (m *MockCluster) GetComponent(host ytsys.PhysicalHost, path ypath.Path) (ytsys.Component, bool) {
+func (m *MockCluster) GetComponent(path ypath.Path) (ytsys.Component, bool) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetComponent", host, path)
+	ret := m.ctrl.Call(m, "GetComponent", path)
 	ret0, _ := ret[0].(ytsys.Component)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }
 
 // GetComponent indicates an expected call of GetComponent.
-func (mr *MockClusterMockRecorder) GetComponent(host, path interface{}) *gomock.Call {
+func (mr *MockClusterMockRecorder) GetComponent(path interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetComponent", reflect.TypeOf((*MockCluster)(nil).GetComponent), host, path)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetComponent", reflect.TypeOf((*MockCluster)(nil).GetComponent), path)
 }
 
 // GetComponents mocks base method.
-func (m *MockCluster) GetComponents() map[ytsys.PhysicalHost]discovery.HostComponents {
+func (m *MockCluster) GetComponents() map[ytsys.PhysicalHost]discovery.Components {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetComponents")
-	ret0, _ := ret[0].(map[ytsys.PhysicalHost]discovery.HostComponents)
+	ret0, _ := ret[0].(map[ytsys.PhysicalHost]discovery.Components)
 	return ret0
 }
 
@@ -141,10 +141,10 @@ func (mr *MockClusterMockRecorder) GetHTTPProxies() *gomock.Call {
 }
 
 // GetHostComponents mocks base method.
-func (m *MockCluster) GetHostComponents(host ytsys.PhysicalHost) (discovery.HostComponents, bool) {
+func (m *MockCluster) GetHostComponents(host ytsys.PhysicalHost) (discovery.Components, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetHostComponents", host)
-	ret0, _ := ret[0].(discovery.HostComponents)
+	ret0, _ := ret[0].(discovery.Components)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }

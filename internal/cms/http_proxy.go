@@ -142,7 +142,7 @@ func (p *TaskProcessor) unbanHTTPProxy(
 }
 
 func (p *TaskProcessor) resolveHTTPProxy(t *models.Task, r *models.HTTPProxy) (*ytsys.HTTPProxy, bool) {
-	c, ok := p.cluster.GetComponent(r.Host, r.Path)
+	c, ok := p.cluster.GetComponent(r.Path)
 	if !ok {
 		p.l.Error("unable to resolve http proxy component", p.httpProxyLogFields(t, r)...)
 		return nil, false

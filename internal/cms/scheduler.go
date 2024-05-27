@@ -146,7 +146,7 @@ func (p *TaskProcessor) activateScheduler(ctx context.Context, r *models.Schedul
 }
 
 func (p *TaskProcessor) resolveScheduler(t *models.Task, r *models.Scheduler) (*ytsys.Scheduler, bool) {
-	c, ok := p.cluster.GetComponent(r.Host, r.Path)
+	c, ok := p.cluster.GetComponent(r.Path)
 	if !ok {
 		p.l.Error("unable to resolve scheduler component", p.schedulerLogFields(t, r)...)
 		return nil, false

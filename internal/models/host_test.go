@@ -13,7 +13,7 @@ func TestHost_UpdateRoles(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		h          *Host
-		components discovery.HostComponents
+		components discovery.Components
 		expected   map[ypath.Path]*Component
 	}{
 		{
@@ -32,7 +32,7 @@ func TestHost_UpdateRoles(t *testing.T) {
 					},
 				},
 			},
-			components: discovery.HostComponents{
+			components: discovery.Components{
 				"//sys/cluster_nodes/node-1:80": &ytsys.Node{
 					Addr:        &ytsys.Addr{FQDN: "node-1", Port: "80"},
 					Annotations: &ytsys.Annotations{PhysicalHost: "1.1.1.1"},
@@ -65,7 +65,7 @@ func TestHost_UpdateRoles(t *testing.T) {
 					},
 				},
 			},
-			components: discovery.HostComponents{
+			components: discovery.Components{
 				"//sys/cluster_nodes/node-1:80": &ytsys.Node{
 					Addr:        &ytsys.Addr{FQDN: "node-1", Port: "80"},
 					Annotations: &ytsys.Annotations{PhysicalHost: "1.1.1.1"},
@@ -118,7 +118,7 @@ func TestHost_UpdateRoles(t *testing.T) {
 					},
 				},
 			},
-			components: discovery.HostComponents{
+			components: discovery.Components{
 				"//sys/cluster_nodes/node-1:80": &ytsys.Node{
 					Addr:        &ytsys.Addr{FQDN: "node-1", Port: "80"},
 					Annotations: &ytsys.Annotations{PhysicalHost: "1.1.1.1"},

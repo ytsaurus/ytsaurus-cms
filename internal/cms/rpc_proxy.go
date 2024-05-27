@@ -216,7 +216,7 @@ func (p *TaskProcessor) unbanRPCProxy(
 }
 
 func (p *TaskProcessor) resolveRPCProxy(t *models.Task, r *models.RPCProxy) (*ytsys.RPCProxy, bool) {
-	c, ok := p.cluster.GetComponent(r.Host, r.Path)
+	c, ok := p.cluster.GetComponent(r.Path)
 	if !ok {
 		p.l.Error("unable to resolve rpc proxy component", p.rpcProxyLogFields(t, r)...)
 		return nil, false

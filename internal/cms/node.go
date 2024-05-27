@@ -370,7 +370,7 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, r *models.Node) {
 }
 
 func (p *TaskProcessor) resolveNodeComponent(t *models.Task, r *models.Node) (*ytsys.Node, bool) {
-	c, ok := p.cluster.GetComponent(r.Host, r.Path)
+	c, ok := p.cluster.GetComponent(r.Path)
 	if !ok {
 		p.l.Error("unable to find node cluster component", p.nodeLogFields(t, r)...)
 		return nil, false

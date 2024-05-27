@@ -310,7 +310,7 @@ func (p *TaskProcessor) makeMaintenanceRequest(task *models.Task) *ytsys.Mainten
 }
 
 func (p *TaskProcessor) resolveMaster(t *models.Task, r *models.Master) (masterComponent, bool) {
-	c, ok := p.cluster.GetComponent(r.Host, r.Path)
+	c, ok := p.cluster.GetComponent(r.Path)
 	if !ok {
 		p.l.Error("unable to resolve master component", p.masterLogFields(t, r)...)
 		return nil, false
