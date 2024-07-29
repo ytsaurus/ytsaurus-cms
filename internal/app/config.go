@@ -25,9 +25,9 @@ type auth func(r chi.Router, yc yt.Client, l log.Structured) chi.Router
 
 // Config is an app config.
 type Config struct {
-	YTToken     string `yaml:"-"`
-	YPToken     string `yaml:"-"`
-	UseRPCProxy bool   `yaml:"use_rpc_proxy"`
+	YTToken            string `yaml:"-"`
+	TaskDiscoveryToken string `yaml:"-"`
+	UseRPCProxy        bool   `yaml:"use_rpc_proxy"`
 
 	HTTPAddr           string        `yaml:"http_addr"`
 	DebugHTTPAddr      string        `yaml:"debug_http_addr"`

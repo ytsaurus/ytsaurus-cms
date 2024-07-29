@@ -51,8 +51,13 @@ func (a *App) Run(ctx context.Context) error {
 		return gctx.Err()
 	})
 
+	d, err := NewTaskDiscoverer(a.registry, a.conf.Clusters, a.conf.TaskDiscoveryToken, a.l)
+	if err != nil {
+		return err
+	}
+
 	g.Go(func() error {
-		return a.initTaskDiscovery(gctx)
+		return d.initTaskDiscovery(gctx)
 	})
 
 	r := chi.NewMux()
@@ -79,7 +84,7 @@ func (a *App) Run(ctx context.Context) error {
 			return err
 		}
 
-		s := NewSystem(c, yc, l)
+		s := NewSystem(c, yc, d, l)
 		systemMetrics := a.registry.WithTags(map[string]string{"yt-cluster": c.Proxy})
 		s.RegisterMetrics(systemMetrics)
 		s.RegisterAPI(r)

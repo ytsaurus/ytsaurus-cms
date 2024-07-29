@@ -86,9 +86,10 @@ type System struct {
 	api       *API
 	systemAPI *SystemAPI
 
-	cluster       models.Cluster
-	storage       cms.Storage
-	taskProcessor *cms.TaskProcessor
+	cluster        models.Cluster
+	storage        cms.Storage
+	taskProcessor  *cms.TaskProcessor
+	taskDiscoverer *TaskDiscoverer
 
 	hotSwapProcessor *hotswap.HotSwapProcessor
 
@@ -108,16 +109,18 @@ type System struct {
 func NewSystem(
 	conf *SystemConfig,
 	yc yt.Client,
+	d *TaskDiscoverer,
 	l log.Structured,
 ) *System {
 	c := models.NewCluster(&conf.ClusterDiscoveryConfig)
 	dc := ytsys.NewClient(yc, l)
 
 	s := &System{
-		conf:    conf,
-		l:       l,
-		yc:      yc,
-		cluster: c,
+		conf:           conf,
+		l:              l,
+		yc:             yc,
+		taskDiscoverer: d,
+		cluster:        c,
 	}
 
 	s.storage = cms.NewStorage(yc, s.tasksPath())
@@ -240,9 +243,9 @@ func (s *System) run(ctx context.Context) error {
 	})
 
 	g.Go(func() error {
-		s.l.Info("starting yp task discovery")
-		err := s.runTaskDiscovery(ctx)
-		s.l.Info("stopped yp task discovery")
+		s.l.Info("starting task discovery")
+		err := s.taskDiscoverer.runTaskDiscovery(ctx, s.conf, s.storage, s.l)
+		s.l.Info("stopped task discovery")
 		return err
 	})
 

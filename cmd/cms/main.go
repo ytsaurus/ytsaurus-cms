@@ -33,7 +33,7 @@ func main() {
 		logger.Fatalf("unable to read config from %s: %s", *configPath, err)
 	}
 	conf.YTToken = os.Getenv("YT_TOKEN")
-	conf.YPToken = os.Getenv("YP_TOKEN")
+	conf.TaskDiscoveryToken = os.Getenv("TASK_DISCOVERY_TOKEN")
 	conf.StartrekConfig.OAuthToken = os.Getenv("STARTREK_OAUTH_TOKEN")
 
 	if err := conf.Init(logger); err != nil {

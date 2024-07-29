@@ -184,15 +184,16 @@ func (c *Cluster) LastReloadTime() time.Time {
 }
 
 func (c *Cluster) rebuildComponentMap() {
-	components := make(map[ytsys.PhysicalHost]Components)
+	hostComponents := make(map[ytsys.PhysicalHost]Components)
+	components := make(Components)
 
 	addComponent := func(component ytsys.Component) {
 		h := component.GetPhysicalHost()
-		if _, ok := components[h]; !ok {
-			components[h] = make(Components)
+		if _, ok := hostComponents[h]; !ok {
+			hostComponents[h] = make(Components)
 		}
-		components[h][component.GetCypressPath()] = component
-		c.components[component.GetCypressPath()] = component
+		hostComponents[h][component.GetCypressPath()] = component
+		components[component.GetCypressPath()] = component
 	}
 
 	for _, n := range c.primaryMasters {
@@ -202,7 +203,6 @@ func (c *Cluster) rebuildComponentMap() {
 	for _, n := range c.secondaryMasters {
 		addComponent(n)
 	}
-
 	for _, p := range c.timestampProviders {
 		addComponent(p)
 	}
@@ -228,7 +228,8 @@ func (c *Cluster) rebuildComponentMap() {
 	}
 
 	c.mu.Lock()
-	c.hostComponents = components
+	c.hostComponents = hostComponents
+	c.components = components
 	c.mu.Unlock()
 }
 
@@ -458,7 +459,12 @@ func (c *Cluster) GetComponents() map[ytsys.PhysicalHost]Components {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return c.hostComponents
+	hostComponentsCopy := make(map[ytsys.PhysicalHost]Components, len(c.hostComponents))
+	for host, components := range c.hostComponents {
+		hostComponentsCopy[host] = components
+	}
+
+	return hostComponentsCopy
 }
 
 func (c *Cluster) GetHostComponents(host ytsys.PhysicalHost) (Components, bool) {
@@ -467,7 +473,7 @@ func (c *Cluster) GetHostComponents(host ytsys.PhysicalHost) (Components, bool) 
 
 	hostComponents, ok := c.hostComponents[host]
 	if !ok {
-		return hostComponents, ok
+		return nil, false
 	}
 
 	hostComponentsCopy := make(Components)
@@ -475,7 +481,7 @@ func (c *Cluster) GetHostComponents(host ytsys.PhysicalHost) (Components, bool) 
 		hostComponentsCopy[path] = component
 	}
 
-	return hostComponentsCopy, ok
+	return hostComponentsCopy, true
 }
 
 func (c *Cluster) GetComponent(path ypath.Path) (ytsys.Component, bool) {
