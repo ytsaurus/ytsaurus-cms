@@ -2,9 +2,11 @@ package cms
 
 import (
 	"context"
+	"strings"
 
 	"go.ytsaurus.tech/library/go/ptr"
 	"go.ytsaurus.tech/yt/admin/cms/internal/models"
+	"go.ytsaurus.tech/yt/go/ypath"
 	"go.ytsaurus.tech/yt/go/yt"
 	"go.ytsaurus.tech/yt/go/ytsys"
 )
@@ -136,4 +138,12 @@ func markNodeDecommissioned(
 		return err
 	}
 	return dc.MarkNodeDecommissioned(ctx, node.Addr, decommisionMsg)
+}
+
+func getPodIDFromYPath(path ypath.Path) string {
+	pathSplit := strings.Split(path.String(), "/")
+	addr := pathSplit[len(pathSplit)-1]
+	shortAddr := strings.Split(addr, ".")[0]
+
+	return shortAddr
 }

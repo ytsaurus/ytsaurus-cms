@@ -2,6 +2,7 @@ package cms
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -1084,6 +1085,11 @@ func (p *TaskProcessor) processTask(ctx context.Context, t *models.Task) {
 		p.processHost(taskCtx, t.HostStates[h])
 	}
 
+	if desc := p.generateWalleDescription(t); t.WalleStatusDescription != desc {
+		t.WalleStatusDescription = desc
+		p.tryUpdateTaskInStorage(ctx, t)
+	}
+
 	// Update task state in storage.
 	if t.AllHostsFinished() {
 		t.SetFinished()
@@ -1351,4 +1357,16 @@ func (p *TaskProcessor) hasTaskUpgrade(t *models.Task) bool {
 
 func IsNOCTask(t *models.Task) bool {
 	return t.IsGroupTask && t.Action == walle.ActionTemporaryUnreachable
+}
+
+func (p *TaskProcessor) generateWalleDescription(t *models.Task) string {
+	var desc []string
+
+	for _, h := range t.HostStates {
+		for path, r := range h.Roles {
+			desc = append(desc, fmt.Sprintf("%s: %s", getPodIDFromYPath(path), r.GetState()))
+		}
+	}
+
+	return strings.Join(desc, " | ")
 }
