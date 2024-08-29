@@ -37,6 +37,8 @@ const (
 
 	sysTransactions = ypath.Path("//sys/transactions")
 	leaderURLAttr   = "leader_url"
+
+	BundleSys = "sys"
 )
 
 type SystemConfig struct {
@@ -50,6 +52,9 @@ type SystemConfig struct {
 	// Proxy identifies cluster.
 	Proxy               string              `yaml:"proxy"`
 	TaskDiscoveryConfig TaskDiscoveryConfig `yaml:"task_discovery_config"`
+
+	// Bundle for service tables, sys by default.
+	Bundle string `yaml:"bundle"`
 
 	EnableHotSwapProcessing bool `yaml:"enable_hot_swap_processing"`
 
@@ -70,6 +75,10 @@ func (c *SystemConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	if c.ClusterPollPeriod <= 0 {
 		return xerrors.Errorf("cluster poll period must be positive, got %s", c.ClusterPollPeriod)
+	}
+
+	if c.Bundle == "" {
+		c.Bundle = BundleSys
 	}
 
 	c.HotSwapProcessorConfig.Init(c.TaskProcessorConfig)
@@ -280,8 +289,12 @@ func (s *System) updateLeader(ctx context.Context, tx *ytlock.WinnerTx) {
 //
 // Can be stopped via ctx.
 func (s *System) ensureTables(ctx context.Context) error {
+	attrs := map[string]any{
+		"tablet_cell_bundle": s.conf.Bundle,
+	}
+
 	tables := map[ypath.Path]migrate.Table{
-		s.tasksPath(): {Schema: schema.MustInfer(&models.Task{})},
+		s.tasksPath(): {Schema: schema.MustInfer(&models.Task{}), Attributes: attrs},
 	}
 
 	if s.conf.EnableHotSwapProcessing {
