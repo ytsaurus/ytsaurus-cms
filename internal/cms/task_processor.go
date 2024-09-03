@@ -1382,7 +1382,7 @@ func (p *TaskProcessor) generateWalleDescription(t *models.Task) string {
 
 	for _, h := range t.HostStates {
 		for path, r := range h.Roles {
-			desc = append(desc, fmt.Sprintf("%s: %s", getPodIDFromYPath(path), r.GetState()))
+			desc = append(desc, fmt.Sprintf("%s %s: %s", r.Type, getPodIDFromYPath(path), r.GetState()))
 		}
 	}
 
