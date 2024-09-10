@@ -78,6 +78,10 @@ type ScenarioType string
 const (
 	ScenarioTypeITDCMaintenance ScenarioType = "itdc-maintenance"
 	ScenarioTypeNOCHard         ScenarioType = "noc-hard"
+	ScenarioTypeNOCSoft         ScenarioType = "noc-soft"
+	ScenarioTypeNewNOCSoft      ScenarioType = "new-noc-soft"
+	ScenarioTypeHardwareUpgrade ScenarioType = "hardware-upgrade"
+	ScenarioTypeHostTransfer    ScenarioType = "hosts-transfer"
 )
 
 type ScenarioInfo struct {
@@ -97,6 +101,18 @@ func (i *ScenarioInfo) MaintenanceStart() time.Time {
 
 func (i *ScenarioInfo) MaintenanceEnd() time.Time {
 	return time.Unix(int64(i.MaintenanceEndTime), 0)
+}
+
+func (i *ScenarioInfo) IsNOCScenario() bool {
+	if i == nil {
+		return false
+	}
+	switch i.Type {
+	case ScenarioTypeNOCHard, ScenarioTypeNOCSoft, ScenarioTypeNewNOCSoft:
+		return true
+	default:
+		return false
+	}
 }
 
 // MaintenanceKind type holds all available maintenance kind values.

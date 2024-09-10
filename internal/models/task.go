@@ -228,6 +228,10 @@ func (t *Task) GetClusterInfo(c Cluster) ClusterInfo {
 }
 
 func (t *Task) IsUrgent() bool {
+	if !t.ScenarioInfo.IsNOCScenario() {
+		return false
+	}
+
 	if !t.ScenarioInfo.HasMaintenanceStartTime() {
 		return true
 	}

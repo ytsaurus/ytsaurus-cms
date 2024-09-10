@@ -41,3 +41,44 @@ func TestAddTasksRequest_yson(t *testing.T) {
 		})
 	}
 }
+
+func TestScenarioInfo_IsNOCScenario(t *testing.T) {
+	for _, tc := range []struct {
+		typ      ScenarioType
+		expected bool
+	}{
+		{
+			typ:      ScenarioTypeHardwareUpgrade,
+			expected: false,
+		},
+		{
+			typ:      ScenarioTypeHostTransfer,
+			expected: false,
+		},
+		{
+			typ:      ScenarioTypeITDCMaintenance,
+			expected: false,
+		},
+		{
+			typ:      ScenarioTypeNOCHard,
+			expected: true,
+		},
+		{
+			typ:      ScenarioTypeNOCSoft,
+			expected: true,
+		},
+		{
+			typ:      ScenarioTypeNewNOCSoft,
+			expected: true,
+		},
+		{
+			typ:      ScenarioType("unknown"),
+			expected: false,
+		},
+	} {
+		t.Run(string(tc.typ), func(t *testing.T) {
+			i := &ScenarioInfo{Type: tc.typ}
+			require.Equal(t, tc.expected, i.IsNOCScenario())
+		})
+	}
+}
