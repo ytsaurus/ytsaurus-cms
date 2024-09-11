@@ -121,7 +121,7 @@ func NewSystem(
 	d *TaskDiscoverer,
 	l log.Structured,
 ) *System {
-	c := models.NewCluster(&conf.ClusterDiscoveryConfig)
+	c := models.NewCluster(&conf.ClusterDiscoveryConfig, l)
 	dc := ytsys.NewClient(yc, l)
 
 	s := &System{

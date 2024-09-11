@@ -8,16 +8,18 @@ import (
 	"go.ytsaurus.tech/yt/go/guid"
 	"go.ytsaurus.tech/yt/go/yson"
 	"go.ytsaurus.tech/yt/go/yt"
+	"go.ytsaurus.tech/yt/go/ytlog"
 	"go.ytsaurus.tech/yt/go/ytsys"
 )
 
 func TestDecommissionStats_TabletCellBundles(t *testing.T) {
-	bs := NewDecommissionStats()
+	bs := NewDecommissionStats(ytlog.Must())
 	require.Zero(t, bs.TabletCommonNodeCount)
 	require.Empty(t, bs.Slots)
 
 	tabletCommonNode := &ytsys.Node{
 		Addr:         &ytsys.Addr{FQDN: "1.1.1.1", Port: "80"},
+		Annotations:  &ytsys.Annotations{PhysicalHost: "1.1.1.1"},
 		ID:           yt.NodeID(guid.New()),
 		Banned:       true,
 		BanMessage:   "banned by gocms",
@@ -76,12 +78,13 @@ func TestDecommissionStats_TabletCellBundles(t *testing.T) {
 }
 
 func TestDecommissionStats_PoolTrees(t *testing.T) {
-	bs := NewDecommissionStats()
+	bs := NewDecommissionStats(ytlog.Must())
 	require.Empty(t, bs.CPU)
 	require.Empty(t, bs.GPU)
 
 	node := &ytsys.Node{
 		Addr:           &ytsys.Addr{FQDN: "1.1.1.1", Port: "80"},
+		Annotations:    &ytsys.Annotations{PhysicalHost: "1.1.1.1"},
 		ID:             yt.NodeID(guid.New()),
 		State:          ytsys.NodeStateOnline,
 		LastSeenTime:   yson.Time{},

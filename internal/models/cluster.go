@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"go.ytsaurus.tech/library/go/core/log"
 	"go.ytsaurus.tech/yt/admin/cms/internal/discovery"
 	"go.ytsaurus.tech/yt/go/ypath"
 	"go.ytsaurus.tech/yt/go/ytsys"
@@ -41,16 +42,18 @@ type Cluster interface {
 // cluster is a Cluster implementation that stores cached cluster state
 // and some temporary data invalidated on cache reload.
 type cluster struct {
+	l  log.Structured
 	mu sync.RWMutex
 	*discovery.Cluster
 	decommissionStats *DecommissionStats
 }
 
 // NewCluster initializes new cluster.
-func NewCluster(conf *discovery.ClusterConfig) *cluster {
+func NewCluster(conf *discovery.ClusterConfig, l log.Structured) *cluster {
 	return &cluster{
+		l:                 l,
 		Cluster:           discovery.NewCluster(conf),
-		decommissionStats: NewDecommissionStats(),
+		decommissionStats: NewDecommissionStats(l),
 	}
 }
 
@@ -63,7 +66,7 @@ func (c *cluster) Reload(ctx context.Context, dc *ytsys.Client) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.decommissionStats = NewDecommissionStats()
+	c.decommissionStats = NewDecommissionStats(c.l)
 
 	return nil
 }
