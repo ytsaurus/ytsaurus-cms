@@ -698,7 +698,7 @@ func (p *TaskProcessor) finishChunkDecommission(ctx context.Context, r *models.N
 	// 3. UseMaintenanceAPI is true and node is decommissioned by robot-yt-cms.
 	if needEnable {
 		p.l.Info("unmarking node decommissioned", p.nodeLogFields(task, r)...)
-		if err := unmarkNodeDecommissioned(ctx, p.dc, node, p.conf.UseMaintenanceAPI); err != nil {
+		if err := unmarkNodeDecommissioned(ctx, p.dc, p.conf.UseMaintenanceAPI); err != nil {
 			p.l.Error("error unmarking node decommissioned", p.nodeLogFields(task, r, log.Error(err))...)
 			return err
 		}
