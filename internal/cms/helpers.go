@@ -142,7 +142,7 @@ func unmarkNodeDecommissioned(ctx context.Context, dc DiscoveryClient, useMainte
 	node := ctx.Value(nodeKey).(*ytsys.Node)
 
 	if useMaintenanceAPI {
-		return removeMaintenances(ctx, dc, node.Addr, yt.MaintenanceComponentClusterNode, yt.MaintenanceTypeDisableWriteSessions)
+		return removeMaintenances(ctx, dc, node.Addr, yt.MaintenanceComponentClusterNode, yt.MaintenanceTypeDecommission)
 	}
 	return dc.UnmarkNodeDecommissioned(ctx, node.Addr)
 }
