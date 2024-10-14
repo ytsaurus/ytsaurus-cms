@@ -936,13 +936,13 @@ func (p *TaskProcessor) checkGPULimits(ctx context.Context, r *models.Node, tree
 		return true
 	}
 
-	available := tree.AvailableResources.GPU - p.cluster.GetDecommissionStats().GPU[tree.Name]
+	available := tree.AvailableResources.GPU - p.cluster.GetDecommissionStats().TotalGPU[tree.Name]
 	guaranteed := tree.SumNodeGPUResources()
 	reserve := available - node.ResourceLimits.GPU - guaranteed
 
 	// Use reserve from fair_share_info if available.
 	if r := tree.ResourceReserves; r != nil {
-		reserve = r.GPU - p.cluster.GetDecommissionStats().GPU[tree.Name]
+		reserve = r.GPU - p.cluster.GetDecommissionStats().TotalGPU[tree.Name]
 	}
 
 	requiredReserve := p.conf.GPUReserve

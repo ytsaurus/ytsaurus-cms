@@ -57,7 +57,7 @@ func NewCluster(conf *discovery.ClusterConfig, l log.Structured) *cluster {
 	}
 }
 
-// Reload queries cluster, updates cached state and resets decommission stats.
+// Reload queries cluster, updates cached state and reloads decommission stats.
 func (c *cluster) Reload(ctx context.Context, dc *ytsys.Client) error {
 	if err := c.Cluster.Reload(ctx, dc); err != nil {
 		return err
@@ -66,7 +66,7 @@ func (c *cluster) Reload(ctx context.Context, dc *ytsys.Client) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.decommissionStats = NewDecommissionStats(c.l)
+	c.decommissionStats.Reload()
 
 	return nil
 }

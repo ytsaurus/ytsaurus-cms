@@ -18,7 +18,7 @@ func TestDecommissionStats_TabletCellBundles(t *testing.T) {
 	require.Empty(t, bs.Slots)
 
 	tabletCommonNode := &ytsys.Node{
-		Addr:         &ytsys.Addr{FQDN: "1.1.1.1", Port: "80"},
+		Addr:         &ytsys.Addr{FQDN: "1.1.1.1", Port: "9012"},
 		Annotations:  &ytsys.Annotations{PhysicalHost: "1.1.1.1"},
 		ID:           yt.NodeID(guid.New()),
 		Banned:       true,
@@ -33,7 +33,7 @@ func TestDecommissionStats_TabletCellBundles(t *testing.T) {
 			{
 				Name:            "default",
 				BalancerEnabled: new(ytsys.YTBool),
-				Nodes:           []*ytsys.Addr{tabletCommonNode.Addr, {FQDN: "2.2.2.2", Port: "80"}},
+				Nodes:           []*ytsys.Addr{tabletCommonNode.Addr, {FQDN: "2.2.2.2", Port: "9012"}},
 				Production:      nil,
 				Slots: map[ytsys.Addr][]*ytsys.TabletSlot{
 					*tabletCommonNode.Addr: {
@@ -48,7 +48,7 @@ func TestDecommissionStats_TabletCellBundles(t *testing.T) {
 							State: ytsys.TabletSlotStateNone,
 						},
 					},
-					ytsys.Addr{FQDN: "2.2.2.2", Port: "80"}: {
+					ytsys.Addr{FQDN: "2.2.2.2", Port: "9012"}: {
 						&ytsys.TabletSlot{
 							State: ytsys.TabletSlotStateNone,
 						},
@@ -81,22 +81,23 @@ func TestDecommissionStats_PoolTrees(t *testing.T) {
 	bs := NewDecommissionStats(ytlog.Must())
 	require.Empty(t, bs.CPU)
 	require.Empty(t, bs.GPU)
+	require.Empty(t, bs.TotalGPU)
 
 	node := &ytsys.Node{
-		Addr:           &ytsys.Addr{FQDN: "1.1.1.1", Port: "80"},
+		Addr:           &ytsys.Addr{FQDN: "1.1.1.1", Port: "9012"},
 		Annotations:    &ytsys.Annotations{PhysicalHost: "1.1.1.1"},
 		ID:             yt.NodeID(guid.New()),
 		State:          ytsys.NodeStateOnline,
 		LastSeenTime:   yson.Time{},
-		ResourceLimits: &ytsys.NodeResourceLimits{CPU: 100, GPU: 200},
+		ResourceLimits: &ytsys.NodeResourceLimits{CPU: 100, GPU: 8},
 	}
 
 	tree := &ytsys.PoolTree{
-		Name: "physical",
+		Name: "gpu_tesla_a100",
 		Nodes: map[string]*ytsys.PoolTreeNode{
 			"taxi-root": {
 				Name:      "taxi-root",
-				Resources: &ytsys.PoolTreeResourceLimits{CPU: 100.0, GPU: 200},
+				Resources: &ytsys.PoolTreeResourceLimits{CPU: 100.0, GPU: 8},
 			},
 			"research": {
 				Name:      "research",
@@ -107,6 +108,105 @@ func TestDecommissionStats_PoolTrees(t *testing.T) {
 	}
 
 	bs.OnNodeDecommission(node, tree, &discovery.CellBundles{})
-	require.Equal(t, 100.0, bs.CPU["physical"])
-	require.Equal(t, 200.0, bs.GPU["physical"])
+	require.Equal(t, 100.0, bs.CPU["gpu_tesla_a100"])
+	require.Equal(t, 8.0, bs.GPU["gpu_tesla_a100"][node.GetAddr().String()])
+	require.Equal(t, 8.0, bs.TotalGPU["gpu_tesla_a100"])
+}
+
+func TestDecommissionStats_Reload(t *testing.T) {
+	bs := NewDecommissionStats(ytlog.Must())
+	require.Empty(t, bs.Slots)
+	require.Empty(t, bs.CPU)
+	require.Empty(t, bs.GPU)
+	require.Empty(t, bs.TotalGPU)
+
+	node1 := &ytsys.Node{
+		Addr:           &ytsys.Addr{FQDN: "1.1.1.1", Port: "9012"},
+		Annotations:    &ytsys.Annotations{PhysicalHost: "1.1.1.1"},
+		ID:             yt.NodeID(guid.New()),
+		State:          ytsys.NodeStateOnline,
+		LastSeenTime:   yson.Time{},
+		ResourceLimits: &ytsys.NodeResourceLimits{CPU: 100, GPU: 8},
+	}
+	node2 := &ytsys.Node{
+		Addr:           &ytsys.Addr{FQDN: "2.2.2.2", Port: "9012"},
+		Annotations:    &ytsys.Annotations{PhysicalHost: "2.2.2.2"},
+		ID:             yt.NodeID(guid.New()),
+		State:          ytsys.NodeStateOnline,
+		LastSeenTime:   yson.Time{},
+		ResourceLimits: &ytsys.NodeResourceLimits{CPU: 100, GPU: 8},
+	}
+
+	tree := &ytsys.PoolTree{
+		Name: "gpu_tesla_a100",
+		Nodes: map[string]*ytsys.PoolTreeNode{
+			"taxi-root": {
+				Name:      "taxi-root",
+				Resources: &ytsys.PoolTreeResourceLimits{CPU: 100.0, GPU: 8},
+			},
+			"research": {
+				Name:      "research",
+				Resources: &ytsys.PoolTreeResourceLimits{CPU: 100.0},
+			},
+		},
+		AvailableResources: &ytsys.PoolTreeAvailableResources{CPU: 2000.0, GPU: 1000.0},
+	}
+
+	bs.OnNodeDecommission(node1, tree, &discovery.CellBundles{})
+	bs.OnNodeDecommission(node2, tree, &discovery.CellBundles{})
+	bs.Reload()
+	require.Empty(t, bs.Slots)
+	require.Empty(t, bs.CPU)
+	require.Equal(t, 8.0, bs.GPU["gpu_tesla_a100"][node1.GetAddr().String()])
+	require.Equal(t, 8.0, bs.GPU["gpu_tesla_a100"][node2.GetAddr().String()])
+	require.Equal(t, 16.0, bs.TotalGPU["gpu_tesla_a100"])
+}
+
+func TestDecommissionStats_Remove(t *testing.T) {
+	bs := NewDecommissionStats(ytlog.Must())
+	require.Empty(t, bs.CPU)
+	require.Empty(t, bs.GPU)
+	require.Empty(t, bs.TotalGPU)
+
+	node1 := &ytsys.Node{
+		Addr:           &ytsys.Addr{FQDN: "1.1.1.1", Port: "9012"},
+		Annotations:    &ytsys.Annotations{PhysicalHost: "1.1.1.1"},
+		ID:             yt.NodeID(guid.New()),
+		State:          ytsys.NodeStateOnline,
+		LastSeenTime:   yson.Time{},
+		ResourceLimits: &ytsys.NodeResourceLimits{CPU: 100, GPU: 8},
+	}
+	node2 := &ytsys.Node{
+		Addr:           &ytsys.Addr{FQDN: "2.2.2.2", Port: "9012"},
+		Annotations:    &ytsys.Annotations{PhysicalHost: "2.2.2.2"},
+		ID:             yt.NodeID(guid.New()),
+		State:          ytsys.NodeStateOnline,
+		LastSeenTime:   yson.Time{},
+		ResourceLimits: &ytsys.NodeResourceLimits{CPU: 100, GPU: 8},
+	}
+
+	tree := &ytsys.PoolTree{
+		Name: "gpu_tesla_a100",
+		Nodes: map[string]*ytsys.PoolTreeNode{
+			"taxi-root": {
+				Name:      "taxi-root",
+				Resources: &ytsys.PoolTreeResourceLimits{CPU: 100.0, GPU: 8},
+			},
+			"research": {
+				Name:      "research",
+				Resources: &ytsys.PoolTreeResourceLimits{CPU: 100.0},
+			},
+		},
+		AvailableResources: &ytsys.PoolTreeAvailableResources{CPU: 2000.0, GPU: 1000.0},
+	}
+
+	bs.OnNodeDecommission(node1, tree, &discovery.CellBundles{})
+	bs.OnNodeDecommission(node2, tree, &discovery.CellBundles{})
+	bs.Remove("gpu_tesla_a100", node1.GetAddr().String())
+	require.Empty(t, bs.GPU["gpu_tesla_a100"][node1.GetAddr().String()])
+	require.Equal(t, 8.0, bs.TotalGPU["gpu_tesla_a100"])
+	bs.Remove("gpu_tesla_a100", node2.GetAddr().String())
+	require.Empty(t, bs.GPU["gpu_tesla_a100"][node2.GetAddr().String()])
+	require.Empty(t, bs.TotalGPU["gpu_tesla_a100"])
+
 }

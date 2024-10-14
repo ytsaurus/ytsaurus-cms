@@ -39,6 +39,8 @@
   "internal/cms/reserve_pool.go":"yt/admin/cms/internal/cms/reserve_pool.go",
   "internal/cms/rpc_proxy.go":"yt/admin/cms/internal/cms/rpc_proxy.go",
   "internal/cms/scheduler.go":"yt/admin/cms/internal/cms/scheduler.go",
+  "internal/cms/scheduler_orchid_client.go":"yt/admin/cms/internal/cms/scheduler_orchid_client.go",
+  "internal/cms/scheduler_orchid_client_mock.go":"yt/admin/cms/internal/cms/scheduler_orchid_client_mock.go",
   "internal/cms/startrek_client_mock.go":"yt/admin/cms/internal/cms/startrek_client_mock.go",
   "internal/cms/storage.go":"yt/admin/cms/internal/cms/storage.go",
   "internal/cms/task_processor.go":"yt/admin/cms/internal/cms/task_processor.go",

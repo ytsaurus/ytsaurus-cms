@@ -16,6 +16,7 @@ import (
 	"go.ytsaurus.tech/yt/admin/cms/internal/startrek"
 	"go.ytsaurus.tech/yt/admin/cms/internal/walle"
 	"go.ytsaurus.tech/yt/go/ypath"
+	"go.ytsaurus.tech/yt/go/yterrors"
 	"go.ytsaurus.tech/yt/go/ytsys"
 	"golang.org/x/sync/errgroup"
 )
@@ -277,6 +278,8 @@ type TaskProcessor struct {
 
 	l log.Structured
 
+	schedulerOrchidClient SchedulerOrchidClient
+
 	dc DiscoveryClient
 	// cluster stores cached cluster state.
 	cluster models.Cluster
@@ -335,17 +338,18 @@ type TaskProcessor struct {
 }
 
 // NewTaskProcessor creates task processor with given params.
-func NewTaskProcessor(conf *TaskProcessorConfig, l log.Structured, dc DiscoveryClient,
+func NewTaskProcessor(conf *TaskProcessorConfig, l log.Structured, schedulerOrchidClient SchedulerOrchidClient, dc DiscoveryClient,
 	c models.Cluster, s Storage) *TaskProcessor {
 
 	p := &TaskProcessor{
-		confLock:         new(nopLocker),
-		conf:             conf,
-		l:                l,
-		dc:               dc,
-		cluster:          c,
-		storage:          s,
-		colocationLimits: NewColocationRateLimits(l, conf.ColocationConfigs),
+		confLock:              new(nopLocker),
+		conf:                  conf,
+		l:                     l,
+		schedulerOrchidClient: schedulerOrchidClient,
+		dc:                    dc,
+		cluster:               c,
+		storage:               s,
+		colocationLimits:      NewColocationRateLimits(l, conf.ColocationConfigs),
 		startrekClient: startrek.NewClient(&startrek.ClientConfig{
 			OAuthToken: conf.StartrekConfig.OAuthToken,
 			URL:        conf.StartrekConfig.URL,
@@ -705,6 +709,11 @@ func (p *TaskProcessor) updateTasks(ctx context.Context) error {
 	tasks = p.makeProcessingPlan(ctx, tasks)
 	p.processConfirmationRequests(ctx, tasks)
 
+	if err := p.updateDecommissionStats(ctx); err != nil {
+		p.l.Error("error updating decommission stats", log.Error(err))
+		return err
+	}
+
 	for _, t := range tasks {
 		s := t.ProcessingState
 		switch s {
@@ -714,6 +723,31 @@ func (p *TaskProcessor) updateTasks(ctx context.Context) error {
 		default:
 			p.l.Error("unknown processing state", log.String("state", string(s)))
 			p.unknownStateTasks.Inc()
+		}
+	}
+
+	return nil
+}
+
+func (p *TaskProcessor) updateDecommissionStats(ctx context.Context) error {
+	gpuMap := p.cluster.GetDecommissionStats().GPU
+	for poolTree, nodeMap := range gpuMap {
+		for addr := range nodeMap {
+			var schedulerOrchidNode SchedulerOrchidNode
+			path := ypath.Root.Child("sys/scheduler").
+				Child("orchid/scheduler/nodes").
+				Child(addr)
+			if err := p.schedulerOrchidClient.GetNode(ctx, path, &schedulerOrchidNode, nil); err != nil {
+				if yterrors.ContainsResolveError(err) {
+					p.cluster.GetDecommissionStats().Remove(poolTree, addr)
+					continue
+				}
+				p.l.Error("error getting orchid node", log.Error(err))
+				return err
+			}
+			if schedulerOrchidNode.Usage == nil || schedulerOrchidNode.Usage.GPU == 0 {
+				p.cluster.GetDecommissionStats().Remove(poolTree, addr)
+			}
 		}
 	}
 

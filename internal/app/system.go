@@ -137,7 +137,7 @@ func NewSystem(
 	conf.TaskProcessorConfig.Proxy = conf.Proxy
 	conf.TaskProcessorConfig.StartrekConfig = conf.StartrekConfig
 	conf.TaskProcessorConfig.ColocationConfigs = conf.ColocationConfigs
-	s.taskProcessor = cms.NewTaskProcessor(&conf.TaskProcessorConfig, l, dc, c, s.storage)
+	s.taskProcessor = cms.NewTaskProcessor(&conf.TaskProcessorConfig, l, yc, dc, c, s.storage)
 
 	s.hotSwapProcessor = hotswap.NewHotSwapProcessor(
 		&conf.HotSwapProcessorConfig, log.With(l.Logger(), log.String("service", "hotswap")).Structured(), dc,
