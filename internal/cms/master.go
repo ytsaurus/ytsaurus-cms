@@ -300,7 +300,7 @@ func (p *TaskProcessor) makeMaintenanceRequest(task *models.Task) *ytsys.Mainten
 		models.DecisionMakerCMS, actionTime, task.ID)
 
 	issuer := string(models.DecisionMakerCMS)
-	req := ytsys.NewMaintenanceRequest(issuer, issuer, comment, map[string]interface{}{
+	req := ytsys.NewMaintenanceRequest(issuer, issuer, comment, map[string]any{
 		"walle_task_id": task.ID,
 		"action":        task.Action,
 		"issuer":        task.Issuer,

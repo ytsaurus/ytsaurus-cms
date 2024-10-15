@@ -57,7 +57,7 @@ func TestComponent_UnmarshalYSON(t *testing.T) {
 				Role:        "yttank",
 				Banned:      false,
 				BanMessage:  "",
-				Alive:       new(map[string]interface{}),
+				Alive:       new(map[string]any),
 			},
 		},
 		{
@@ -298,7 +298,7 @@ func TestRPCProxy(t *testing.T) {
 		Role:        "yttank",
 		Banned:      false,
 		BanMessage:  "",
-		Alive:       new(map[string]interface{}),
+		Alive:       new(map[string]any),
 	}
 
 	p := NewRPCProxy(c)

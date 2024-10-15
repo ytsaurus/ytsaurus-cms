@@ -50,7 +50,7 @@ type Config struct {
 	colocationConfigs cms.ColocationConfigs `yaml:"-"`
 }
 
-func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *Config) UnmarshalYAML(unmarshal func(any) error) error {
 	type plain Config
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err

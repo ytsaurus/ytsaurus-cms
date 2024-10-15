@@ -45,7 +45,7 @@ type StartrekConfig struct {
 	Queue      string `yaml:"queue"`
 }
 
-func (c *StartrekConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *StartrekConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	type plain StartrekConfig
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
@@ -154,7 +154,7 @@ type TaskProcessorConfig struct {
 	PodsMovingEnabled bool `yaml:"pods_moving_enabled"`
 }
 
-func (c *TaskProcessorConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *TaskProcessorConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	type plain TaskProcessorConfig
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err

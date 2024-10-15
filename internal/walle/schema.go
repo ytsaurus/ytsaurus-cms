@@ -52,7 +52,7 @@ func Check(name string, data []byte) error {
 		return ErrUnknownName
 	}
 
-	var v interface{}
+	var v any
 	if err := json.Unmarshal(data, &v); err != nil {
 		return xerrors.Errorf("cannot unmarshal data as JSON: %w", err)
 	}

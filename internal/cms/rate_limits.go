@@ -21,7 +21,7 @@ type Limiter struct {
 	Config *RateLimitConfig
 }
 
-func (c *RateLimitConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *RateLimitConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	type plain RateLimitConfig
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err

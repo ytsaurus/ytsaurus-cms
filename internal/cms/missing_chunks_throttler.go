@@ -36,7 +36,7 @@ func (c *MissingChunksThrottlerConfig) init() {
 	}
 }
 
-func (c *MissingChunksThrottlerConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *MissingChunksThrottlerConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	type plain MissingChunksThrottlerConfig
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err

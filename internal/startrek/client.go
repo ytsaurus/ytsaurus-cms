@@ -112,9 +112,9 @@ func (c *Client) LinkTicket(ctx context.Context, source, target TicketKey, r Tic
 	queryURL := fmt.Sprintf("%s/issues/%s/links", c.conf.URL, source)
 
 	type startrekError struct {
-		Errors        interface{} `json:"errors"`
-		ErrorMessages []string    `json:"errorMessages"`
-		StatusCode    int         `json:"statusCode"`
+		Errors        any      `json:"errors"`
+		ErrorMessages []string `json:"errorMessages"`
+		StatusCode    int      `json:"statusCode"`
 	}
 
 	resp, err := c.httpClient.R().
@@ -123,7 +123,7 @@ func (c *Client) LinkTicket(ctx context.Context, source, target TicketKey, r Tic
 			"Content-Type":  "application/json",
 			"Authorization": fmt.Sprintf("OAuth %s", c.conf.OAuthToken),
 		}).
-		SetBody(map[string]interface{}{
+		SetBody(map[string]any{
 			"relationship": r,
 			"issue":        target,
 		}).
@@ -158,7 +158,7 @@ func (c *Client) CloseTicket(ctx context.Context, key TicketKey) error {
 	)
 }
 
-func (c *Client) EditStatus(ctx context.Context, ticket TicketKey, transition Transition, payload interface{}) error {
+func (c *Client) EditStatus(ctx context.Context, ticket TicketKey, transition Transition, payload any) error {
 	ok, err := c.checkTransitionAvailable(ctx, ticket, transition)
 	if err != nil {
 		return err
@@ -204,7 +204,7 @@ func (c *Client) checkTransitionAvailable(ctx context.Context, ticket TicketKey,
 	return false, nil
 }
 
-func (c *Client) makeTransition(ctx context.Context, ticket TicketKey, transition Transition, payload interface{}) error {
+func (c *Client) makeTransition(ctx context.Context, ticket TicketKey, transition Transition, payload any) error {
 	queryURL := fmt.Sprintf("%s/issues/%s/transitions/%s/_execute", c.conf.URL, ticket, transition)
 
 	resp, err := c.httpClient.R().

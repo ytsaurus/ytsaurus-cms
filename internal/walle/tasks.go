@@ -58,7 +58,7 @@ type Task struct {
 	// Comment is an optional message from issuer.
 	Comment string `json:"comment,omitempty" yson:"comment,omitempty"`
 	// Extra contains additional task parameters.
-	Extra map[string]interface{} `json:"extra,omitempty" yson:"extra,omitempty"`
+	Extra map[string]any `json:"extra,omitempty" yson:"extra,omitempty"`
 	// ScenarioInfo contains additional information about wall-e scenario.
 	ScenarioInfo *ScenarioInfo `json:"scenario_info,omitempty" yson:"scenario_info,omitempty"`
 
@@ -164,9 +164,9 @@ type MaintenanceInfo struct {
 	// EstimatedDuration stores estimated repair duration in seconds.
 	EstimatedDuration float64 `json:"estimated_duration,omitempty" yson:"estimated_duration,omitempty"`
 	// Labels store dynamically typed description.
-	Labels   map[string]interface{} `json:"labels,omitempty" yson:"labels,omitempty"`
-	Priority MaintenancePriority    `json:"priority,omitempty" yson:"priority,omitempty"`
-	Source   MaintenanceSource      `json:"source,omitempty" yson:"source,omitempty"`
+	Labels   map[string]any      `json:"labels,omitempty" yson:"labels,omitempty"`
+	Priority MaintenancePriority `json:"priority,omitempty" yson:"priority,omitempty"`
+	Source   MaintenanceSource   `json:"source,omitempty" yson:"source,omitempty"`
 }
 
 // AddTaskRequest is a type corresponding to "POST /tasks" request.

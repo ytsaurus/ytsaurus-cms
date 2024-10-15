@@ -88,8 +88,8 @@ ya make yt/admin/cms/cmd/cms-cli
 `
 
 var ConfirmMasterTicketTemplate = template.Must(template.New("config").
-	Funcs(map[string]interface{}{
-		"marshal": func(v interface{}) string {
+	Funcs(map[string]any{
+		"marshal": func(v any) string {
 			data, _ := yson.MarshalFormat(v, yson.FormatPretty)
 			return string(data)
 		},
@@ -99,7 +99,7 @@ var ConfirmMasterTicketTemplate = template.Must(template.New("config").
 // MustExecuteTemplate applies parsed template to specified data object.
 //
 // Panics in case of an error.
-func MustExecuteTemplate(t *template.Template, data interface{}) string {
+func MustExecuteTemplate(t *template.Template, data any) string {
 	builder := strings.Builder{}
 	if err := t.Execute(&builder, data); err != nil {
 		panic(err)

@@ -67,7 +67,7 @@ type SystemConfig struct {
 	AuthConfig AuthConfig `yaml:"-"`
 }
 
-func (c *SystemConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SystemConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	type plain SystemConfig
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
@@ -193,7 +193,7 @@ func (s *System) Run(ctx context.Context) error {
 	lock := ytlock.NewLockOptions(s.yc, lockPath, ytlock.Options{
 		CreateIfMissing: true,
 		LockMode:        yt.LockExclusive,
-		TxAttributes:    map[string]interface{}{leaderURLAttr: s.conf.selfURL},
+		TxAttributes:    map[string]any{leaderURLAttr: s.conf.selfURL},
 	})
 
 	return ytlock.RunLocked(ctx, lock, s.run, func(err error, retryAfter time.Duration) {

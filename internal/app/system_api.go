@@ -207,7 +207,7 @@ func (a *SystemAPI) deleteTask(w http.ResponseWriter, r *http.Request) {
 }
 
 // parseJSONRequest extracts (to out) and validates (against schema) json request.
-func parseJSONRequest(r *http.Request, schema string, out interface{}) error {
+func parseJSONRequest(r *http.Request, schema string, out any) error {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return xerrors.Errorf("can't read body %w", err)
@@ -230,7 +230,7 @@ func internalError(w http.ResponseWriter, err error) {
 }
 
 // mustMarshalJSON returns JSON encoding of v or panics in case of any error.
-func mustMarshalJSON(v interface{}) []byte {
+func mustMarshalJSON(v any) []byte {
 	data, err := json.Marshal(v)
 	if err != nil {
 		panic(err)

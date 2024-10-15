@@ -107,7 +107,7 @@ func (c *Component) UnmarshalYSON(data []byte) error {
 }
 
 type Role interface {
-	GetState() interface{}
+	GetState() any
 	Decommissioned() bool
 	Processed() bool
 	Finished() bool
@@ -172,7 +172,7 @@ func NewTimestampProvider(p *ytsys.TimestampProvider) *Master {
 	}
 }
 
-func (m *Master) GetState() interface{} {
+func (m *Master) GetState() any {
 	return m.State
 }
 
@@ -244,7 +244,7 @@ func NewScheduler(s *ytsys.Scheduler) *Scheduler {
 	}
 }
 
-func (s *Scheduler) GetState() interface{} {
+func (s *Scheduler) GetState() any {
 	return s.State
 }
 
@@ -311,7 +311,7 @@ func NewControllerAgent(a *ytsys.ControllerAgent) *ControllerAgent {
 	}
 }
 
-func (a *ControllerAgent) GetState() interface{} {
+func (a *ControllerAgent) GetState() any {
 	return a.State
 }
 
@@ -415,7 +415,7 @@ func NewNode(n *ytsys.Node) *Node {
 	}
 }
 
-func (n *Node) GetState() interface{} {
+func (n *Node) GetState() any {
 	return n.State
 }
 
@@ -563,7 +563,7 @@ func NewHTTPProxy(p *ytsys.HTTPProxy) *HTTPProxy {
 	}
 }
 
-func (p *HTTPProxy) GetState() interface{} {
+func (p *HTTPProxy) GetState() any {
 	return p.State
 }
 
@@ -637,7 +637,7 @@ func NewRPCProxy(p *ytsys.RPCProxy) *RPCProxy {
 	}
 }
 
-func (p *RPCProxy) GetState() interface{} {
+func (p *RPCProxy) GetState() any {
 	return p.State
 }
 

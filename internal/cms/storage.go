@@ -104,7 +104,7 @@ func (s *dynamicTableStorage) update(ctx context.Context, task *models.Task, ove
 		panic(xerrors.Errorf("task id must be unique; got %d tasks: %+v", len(tasks), tasks))
 	}
 
-	rows := []interface{}{task}
+	rows := []any{task}
 	if err := tx.InsertRows(ctx, s.table, rows, nil); err != nil {
 		return xerrors.Errorf("dyn-table insert failed: %w", err)
 	}
@@ -166,7 +166,7 @@ func (s *dynamicTableStorage) Confirm(ctx context.Context, id walle.TaskID, requ
 	task.ConfirmationRequestedAt = now
 	task.ConfirmationRequestedBy = requester
 
-	rows := []interface{}{task}
+	rows := []any{task}
 	if err := tx.InsertRows(ctx, s.table, rows, nil); err != nil {
 		return nil, xerrors.Errorf("dyn-table insert failed: %w", err)
 	}
@@ -193,7 +193,7 @@ func (s *dynamicTableStorage) Delete(ctx context.Context, id walle.TaskID) error
 	task.DeletionRequestedAt = now
 	task.DeletionRequested = true
 
-	rows := []interface{}{task}
+	rows := []any{task}
 	if err := tx.InsertRows(ctx, s.table, rows, nil); err != nil {
 		return xerrors.Errorf("dyn-table insert failed: %w", err)
 	}
@@ -217,7 +217,7 @@ func (s *dynamicTableStorage) selectTasks(ctx context.Context, query string) ([]
 // Returns error wrapping TaskNotFoundErr if task was not found.
 func (s *dynamicTableStorage) loadTask(ctx context.Context, id walle.TaskID, tx yt.TabletTx) (*models.Task, error) {
 	key := &tasksTableKey{ID: id}
-	r, err := tx.LookupRows(ctx, s.table, []interface{}{key}, nil)
+	r, err := tx.LookupRows(ctx, s.table, []any{key}, nil)
 	if err != nil {
 		return nil, err
 	}

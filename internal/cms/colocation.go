@@ -31,7 +31,7 @@ type ColocationConfig struct {
 	MaxHostsPerHour float64 `yaml:"max_hosts_per_hour"`
 }
 
-func (c *ColocationConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *ColocationConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	type plain ColocationConfig
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
