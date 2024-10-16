@@ -150,7 +150,7 @@ func unmarkNodeDecommissioned(ctx context.Context, dc DiscoveryClient, useMainte
 func markNodeDecommissioned(
 	ctx context.Context, dc DiscoveryClient, node *ytsys.Node,
 	useMaintenanceAPI bool,
-	decommisionMsg string,
+	decommissionMsg string,
 ) error {
 	if useMaintenanceAPI {
 		_, err := dc.AddMaintenance(
@@ -163,7 +163,7 @@ func markNodeDecommissioned(
 		)
 		return err
 	}
-	return dc.MarkNodeDecommissioned(ctx, node.Addr, decommisionMsg)
+	return dc.MarkNodeDecommissioned(ctx, node.Addr, decommissionMsg)
 }
 
 func getPodIDFromYPath(path ypath.Path) string {
