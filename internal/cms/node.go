@@ -307,6 +307,7 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, r *models.Node) {
 
 	storedChunkCount := node.Statistics.TotalStoredChunkCount
 	nodeWithoutChunks := storedChunkCount == 0 && node.State == ytsys.NodeStateOnline
+	nodeOffline := p.checkNodeOffline(node)
 
 	if !task.IsGroupTask && !nodeWithoutChunks && time.Since(p.lastNodeBanTime) < p.conf.BannedNodeHoldOffPeriod {
 		p.l.Info("can not ban node as another one was banned recently", p.nodeLogFields(task, r)...)
@@ -322,7 +323,7 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, r *models.Node) {
 	unrecoverableDataSafe := p.chunkIntegrity.CheckUnrecoverable() &&
 		(chunkIntegrityIntact || !chunkIntegrityIntact && storedChunkCount <= p.conf.IgnorePMCThreshold)
 
-	if task.IsGroupTask && !task.IsUrgent() && !nodeWithoutChunks {
+	if task.IsGroupTask && !task.IsUrgent() && !nodeOffline && !nodeWithoutChunks {
 		p.l.Info("will not ban node as maintenance is far ahead",
 			p.nodeLogFields(task, r, log.String("indicators", p.chunkIntegrity.String()),
 				log.Int64("total_stored_chunks", storedChunkCount),
