@@ -55,7 +55,7 @@ yt select-rows "* from [//sys/cms/tasks] where id = '{{.ID}}'" --proxy={{.Proxy}
 
 **Что делать?**
 
-Прежде чем выводить хост убедитесь, что все ((https://wiki.yandex-team.ru/yt/internal/duty/manual/#zajavkanaobsluzhivanieoborudovanijahostxxx необходимые подготовительные действия)) произведены!
+Прежде чем выводить хост убедитесь, что все ((https://wiki.yandex-team.ru/yt/internal/duty/manual/#zayavka-na-obsluzhivanie-oborudovaniya-host-xxx необходимые подготовительные действия)) произведены!
 {{if .EnableFollowerProcessing}}
 На кластере включена автоматическая отдача фолловеров. Достаточно переключить лидера.
 %%
