@@ -38,6 +38,7 @@
   "internal/cms/rate_limits.go":"yt/admin/cms/internal/cms/rate_limits.go",
   "internal/cms/reserve_pool.go":"yt/admin/cms/internal/cms/reserve_pool.go",
   "internal/cms/rpc_proxy.go":"yt/admin/cms/internal/cms/rpc_proxy.go",
+  "internal/cms/schedule.go":"yt/admin/cms/internal/cms/schedule.go",
   "internal/cms/scheduler.go":"yt/admin/cms/internal/cms/scheduler.go",
   "internal/cms/scheduler_orchid_client.go":"yt/admin/cms/internal/cms/scheduler_orchid_client.go",
   "internal/cms/scheduler_orchid_client_mock.go":"yt/admin/cms/internal/cms/scheduler_orchid_client_mock.go",

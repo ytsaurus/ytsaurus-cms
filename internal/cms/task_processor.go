@@ -152,6 +152,10 @@ type TaskProcessorConfig struct {
 	// PodsMovingEnabled enable handling pods moving after the host is shut down.
 	// The components in the task are not deleted if they exist on the cluster.
 	PodsMovingEnabled bool `yaml:"pods_moving_enabled"`
+
+	// Schedule determines which tasks not to process at specific times.
+	// The restrictions do not apply to group tasks.
+	Schedule TaskScheduleConfig `yaml:"task_processing_schedule"`
 }
 
 func (c *TaskProcessorConfig) UnmarshalYAML(unmarshal func(any) error) error {
@@ -917,6 +921,13 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 		if !t.ConfirmationRequested && len(hostsByTaskType)+newHostCount > limiter.Config.MaxParallelHosts {
 			p.l.Info("skipping new task due to rate limit", log.Any("task", t),
 				log.Int("max_parallel_hosts", limiter.Config.MaxParallelHosts))
+			return
+		}
+
+		if !p.conf.Schedule.Allow(t, time.Now()) {
+			p.l.Info("skipping new task due to schedule restrictions",
+				log.Any("task", t),
+				log.Any("schedule_config", p.conf.Schedule))
 			return
 		}
 
