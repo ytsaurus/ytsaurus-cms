@@ -763,18 +763,18 @@ func (p *TaskProcessor) updateDecommissionStats(ctx context.Context) error {
 // For now we only have 1 gpu node per host.
 // Anything other than that is considered non-gpu.
 func (p *TaskProcessor) isGPUTask(t *models.Task) bool {
-	nodes := t.GetNodes()
-
-	if len(nodes) != 1 {
+	if len(t.GetNodes()) == 0 {
 		return false
 	}
 
-	nodeComponent, ok := p.resolveNodeComponent(t, nodes[0])
-	if ok && nodeComponent.HasTag("gpu") {
-		return true
+	for _, n := range t.GetNodes() {
+		nodeComponent, ok := p.resolveNodeComponent(t, n)
+		if !ok || !nodeComponent.HasTag("gpu") {
+			return false
+		}
 	}
 
-	return false
+	return true
 }
 
 // makeProcessingPlan reorders and filters tasks based on their and cluster states.
