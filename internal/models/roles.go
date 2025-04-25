@@ -108,6 +108,7 @@ func (c *Component) UnmarshalYSON(data []byte) error {
 
 type Role interface {
 	GetState() any
+	GetStateDescription() string
 	Decommissioned() bool
 	Processed() bool
 	Finished() bool
@@ -174,6 +175,13 @@ func NewTimestampProvider(p *ytsys.TimestampProvider) *Master {
 
 func (m *Master) GetState() any {
 	return m.State
+}
+
+func (m *Master) GetStateDescription() string {
+	if m.State == MasterStateTicketMade && m.TicketKey != "" {
+		return fmt.Sprintf("%s %s", m.State, m.TicketKey)
+	}
+	return string(m.State)
 }
 
 func (m *Master) Decommissioned() bool {
@@ -248,6 +256,10 @@ func (s *Scheduler) GetState() any {
 	return s.State
 }
 
+func (s *Scheduler) GetStateDescription() string {
+	return string(s.State)
+}
+
 func (s *Scheduler) Decommissioned() bool {
 	return s.Processed()
 }
@@ -313,6 +325,10 @@ func NewControllerAgent(a *ytsys.ControllerAgent) *ControllerAgent {
 
 func (a *ControllerAgent) GetState() any {
 	return a.State
+}
+
+func (a *ControllerAgent) GetStateDescription() string {
+	return string(a.State)
 }
 
 func (a *ControllerAgent) Decommissioned() bool {
@@ -417,6 +433,10 @@ func NewNode(n *ytsys.Node) *Node {
 
 func (n *Node) GetState() any {
 	return n.State
+}
+
+func (n *Node) GetStateDescription() string {
+	return string(n.State)
 }
 
 func (n *Node) StartMaintenance(req *ytsys.MaintenanceRequest) {
@@ -567,6 +587,10 @@ func (p *HTTPProxy) GetState() any {
 	return p.State
 }
 
+func (p *HTTPProxy) GetStateDescription() string {
+	return string(p.State)
+}
+
 func (p *HTTPProxy) Decommissioned() bool {
 	return p.Processed()
 }
@@ -639,6 +663,10 @@ func NewRPCProxy(p *ytsys.RPCProxy) *RPCProxy {
 
 func (p *RPCProxy) GetState() any {
 	return p.State
+}
+
+func (p *RPCProxy) GetStateDescription() string {
+	return string(p.State)
 }
 
 func (p *RPCProxy) StartMaintenance(req *ytsys.MaintenanceRequest) {
