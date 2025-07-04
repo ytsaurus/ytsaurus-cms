@@ -30,6 +30,8 @@ func NewComponent(c ytsys.Component) *Component {
 		return &Component{Type: r, Role: NewScheduler(c.(*ytsys.Scheduler))}
 	case ytsys.RoleControllerAgent:
 		return &Component{Type: r, Role: NewControllerAgent(c.(*ytsys.ControllerAgent))}
+	case ytsys.RoleQueueAgent:
+		return &Component{Type: r, Role: NewQueueAgent(c.(*ytsys.QueueAgent))}
 	case ytsys.RoleNode:
 		return &Component{Type: r, Role: NewNode(c.(*ytsys.Node))}
 	case ytsys.RoleHTTPProxy:
@@ -94,6 +96,14 @@ func (c *Component) UnmarshalYSON(data []byte) error {
 	case ytsys.RoleControllerAgent:
 		p := struct {
 			Role *ControllerAgent `json:"role" yson:"role"`
+		}{}
+		if err := yson.Unmarshal(data, &p); err != nil {
+			return err
+		}
+		c.Role = p.Role
+	case ytsys.RoleQueueAgent:
+		p := struct {
+			Role *QueueAgent `json:"role" yson:"role"`
 		}{}
 		if err := yson.Unmarshal(data, &p); err != nil {
 			return err
@@ -359,6 +369,77 @@ func (a *ControllerAgent) StartMaintenance(req *ytsys.MaintenanceRequest) {
 }
 
 func (a *ControllerAgent) FinishMaintenance() {
+	a.InMaintenance = false
+	a.MaintenanceFinishTime = yson.Time(time.Now().UTC())
+}
+
+type QueueAgentProcessingState string
+
+const (
+	QueueAgentStateAccepted  QueueAgentProcessingState = "accepted"
+	QueueAgentStateProcessed QueueAgentProcessingState = "processed"
+	QueueAgentStateFinished  QueueAgentProcessingState = "finished"
+)
+
+type QueueAgent struct {
+	Host ytsys.PhysicalHost `json:"host" yson:"host"`
+	Addr *ytsys.Addr        `json:"addr" yson:"addr"`
+	Path ypath.Path         `json:"path" yson:"path"`
+
+	InMaintenance         bool                      `json:"in_maintenance" yson:"in_maintenance"`
+	MaintenanceStartTime  yson.Time                 `json:"maintenance_start_time" yson:"maintenance_start_time"`
+	MaintenanceFinishTime yson.Time                 `json:"maintenance_finish_time" yson:"maintenance_finish_time"`
+	MaintenanceRequest    *ytsys.MaintenanceRequest `json:"maintenance_request" yson:"maintenance_request"`
+
+	State QueueAgentProcessingState `json:"state" yson:"state"`
+}
+
+func NewQueueAgent(a *ytsys.QueueAgent) *QueueAgent {
+	return &QueueAgent{
+		Host:          a.PhysicalHost,
+		Addr:          a.Addr,
+		Path:          a.GetCypressPath(),
+		InMaintenance: bool(a.InMaintenance),
+		State:         QueueAgentStateAccepted,
+	}
+}
+
+func (a *QueueAgent) GetState() any {
+	return a.State
+}
+
+func (a *QueueAgent) GetStateDescription() string {
+	return string(a.State)
+}
+
+func (a *QueueAgent) Decommissioned() bool {
+	return a.Processed()
+}
+
+func (a *QueueAgent) Processed() bool {
+	return a.State == QueueAgentStateProcessed
+}
+
+// AllowWalle changes agent state so that it can be taken by walle.
+func (a *QueueAgent) AllowWalle() {
+	a.State = QueueAgentStateProcessed
+}
+
+func (a *QueueAgent) Finished() bool {
+	return a.State == QueueAgentStateFinished
+}
+
+func (a *QueueAgent) SetFinished() {
+	a.State = QueueAgentStateFinished
+}
+
+func (a *QueueAgent) StartMaintenance(req *ytsys.MaintenanceRequest) {
+	a.InMaintenance = true
+	a.MaintenanceStartTime = yson.Time(time.Now().UTC())
+	a.MaintenanceRequest = req
+}
+
+func (a *QueueAgent) FinishMaintenance() {
 	a.InMaintenance = false
 	a.MaintenanceFinishTime = yson.Time(time.Now().UTC())
 }

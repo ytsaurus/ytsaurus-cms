@@ -27,6 +27,7 @@ type Cluster interface {
 	GetRPCProxies() (ytsys.RPCProxyMap, error)
 	GetSchedulers() (ytsys.SchedulerMap, error)
 	GetControllerAgents() (ytsys.ControllerAgentMap, error)
+	GetQueueAgents() (ytsys.QueueAgentMap, error)
 	GetMasterCell(cellPath ypath.Path) ([]ytsys.Component, error)
 
 	GetNodePoolTree(addr ytsys.Addr) (*ytsys.PoolTree, error)

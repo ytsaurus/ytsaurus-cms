@@ -115,6 +115,7 @@ type TaskProcessorConfig struct {
 	OfflineHTTPProxyRetentionPeriod time.Duration `yaml:"offline_http_proxy_retention_period"`
 	MaxHTTPProxiesPerRole           float64       `yaml:"max_http_proxies_per_role"`
 	MaxRPCProxiesPerRole            float64       `yaml:"max_rpc_proxies_per_role"`
+	MaxBannedQueueAgentsPercent     float64       `yaml:"max_banned_queue_agents_percent"`
 
 	RateLimits    RateLimitConfig `yaml:",inline"`
 	GPURateLimits RateLimitConfig `yaml:"gpu_rate_limits"`
@@ -1385,6 +1386,8 @@ func (p *TaskProcessor) processRole(ctx context.Context, c *models.Component) {
 		p.processScheduler(ctx, role)
 	case *models.ControllerAgent:
 		p.processControllerAgent(ctx, role)
+	case *models.QueueAgent:
+		p.processQueueAgent(ctx, role)
 	case *models.HTTPProxy:
 		p.processHTTPProxy(ctx, role)
 	case *models.RPCProxy:

@@ -48,6 +48,7 @@ type Cluster struct {
 	rpcProxies         ytsys.RPCProxyMap
 	schedulers         ytsys.SchedulerMap
 	controllerAgents   ytsys.ControllerAgentMap
+	queueAgents        ytsys.QueueAgentMap
 
 	poolTrees     ytsys.PoolTrees
 	nodePoolTrees ytsys.NodePoolTrees
@@ -77,6 +78,7 @@ func NewCluster(conf *ClusterConfig) *Cluster {
 		rpcProxies:         make(ytsys.RPCProxyMap),
 		schedulers:         make(ytsys.SchedulerMap),
 		controllerAgents:   make(ytsys.ControllerAgentMap),
+		queueAgents:        make(ytsys.QueueAgentMap),
 		poolTrees:          make(ytsys.PoolTrees),
 		nodePoolTrees:      make(ytsys.NodePoolTrees),
 		tabletCells:        make(ytsys.TabletCells),
@@ -123,6 +125,10 @@ func (c *Cluster) Reload(ctx context.Context, dc *ytsys.Client) error {
 	}
 
 	if err := c.reloadControllerAgents(ctx, dc); err != nil {
+		updateError(err)
+	}
+
+	if err := c.reloadQueueAgents(ctx, dc); err != nil {
 		updateError(err)
 	}
 
@@ -224,6 +230,10 @@ func (c *Cluster) rebuildComponentMap() {
 	}
 
 	for _, n := range c.controllerAgents {
+		addComponent(n)
+	}
+
+	for _, n := range c.queueAgents {
 		addComponent(n)
 	}
 
@@ -343,6 +353,19 @@ func (c *Cluster) reloadControllerAgents(ctx context.Context, dc *ytsys.Client) 
 
 	c.mu.Lock()
 	c.controllerAgents = agents
+	c.mu.Unlock()
+
+	return nil
+}
+
+func (c *Cluster) reloadQueueAgents(ctx context.Context, dc *ytsys.Client) error {
+	agents, err := dc.GetQueueAgents(ctx)
+	if err != nil {
+		return err
+	}
+
+	c.mu.Lock()
+	c.queueAgents = agents
 	c.mu.Unlock()
 
 	return nil
@@ -586,6 +609,17 @@ func (c *Cluster) GetControllerAgents() (ytsys.ControllerAgentMap, error) {
 	}
 
 	return c.controllerAgents, nil
+}
+
+func (c *Cluster) GetQueueAgents() (ytsys.QueueAgentMap, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if err := c.err; err != nil {
+		return nil, err
+	}
+
+	return c.queueAgents, nil
 }
 
 func (c *Cluster) GetNodePoolTree(addr ytsys.Addr) (*ytsys.PoolTree, error) {

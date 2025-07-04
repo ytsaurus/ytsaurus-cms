@@ -250,6 +250,42 @@ func TestControllerAgent(t *testing.T) {
 	require.Equal(t, ControllerAgentStateFinished, ca.State)
 }
 
+func TestQueueAgent(t *testing.T) {
+	c := &ytsys.QueueAgent{
+		Addr:        &ytsys.Addr{FQDN: "qa", Port: "9017"},
+		ID:          yt.NodeID(guid.New()),
+		Annotations: &ytsys.Annotations{PhysicalHost: "1.2.3.4"},
+	}
+
+	qa := NewQueueAgent(c)
+	require.Equal(t, c.Addr.String(), qa.Addr.String())
+	require.Equal(t, c.Annotations.PhysicalHost, qa.Host)
+	require.Equal(t, QueueAgentStateAccepted, qa.GetState())
+	require.False(t, qa.InMaintenance)
+	require.False(t, qa.Decommissioned())
+	require.False(t, qa.Processed())
+
+	req := ytsys.NewMaintenanceRequest("gocms", "tester", "test", nil)
+	qa.StartMaintenance(req)
+	require.True(t, qa.InMaintenance)
+	require.NotEqual(t, qa.MaintenanceStartTime, time.Time{})
+	require.Equal(t, req, qa.MaintenanceRequest)
+
+	qa.AllowWalle()
+	require.True(t, qa.Decommissioned())
+	require.True(t, qa.Processed())
+	require.False(t, qa.Finished())
+	require.Equal(t, QueueAgentStateProcessed, qa.State)
+
+	qa.FinishMaintenance()
+	require.False(t, qa.InMaintenance)
+	require.NotEqual(t, qa.MaintenanceFinishTime, time.Time{})
+
+	qa.SetFinished()
+	require.True(t, qa.Finished())
+	require.Equal(t, QueueAgentStateFinished, qa.State)
+}
+
 func TestHTTPProxy(t *testing.T) {
 	c := &ytsys.HTTPProxy{
 		Addr:        &ytsys.Addr{FQDN: "ca", Port: "9012"},

@@ -35,6 +35,7 @@
   "internal/cms/node.go":"yt/admin/cms/internal/cms/node.go",
   "internal/cms/proxy_cache_mock.go":"yt/admin/cms/internal/cms/proxy_cache_mock.go",
   "internal/cms/proxy_role_limits.go":"yt/admin/cms/internal/cms/proxy_role_limits.go",
+  "internal/cms/queue_agent.go":"yt/admin/cms/internal/cms/queue_agent.go",
   "internal/cms/rate_limits.go":"yt/admin/cms/internal/cms/rate_limits.go",
   "internal/cms/reserve_pool.go":"yt/admin/cms/internal/cms/reserve_pool.go",
   "internal/cms/rpc_proxy.go":"yt/admin/cms/internal/cms/rpc_proxy.go",
