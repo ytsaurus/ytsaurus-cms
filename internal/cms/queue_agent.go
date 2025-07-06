@@ -30,7 +30,7 @@ func (p *TaskProcessor) processQueueAgent(ctx context.Context, r *models.QueueAg
 func (p *TaskProcessor) processPendingQueueAgent(ctx context.Context, r *models.QueueAgent) {
 	task := ctx.Value(taskKey).(*models.Task)
 
-	agent, ok := p.resolveQueueAgent(task, r)
+	_, ok := p.resolveQueueAgent(task, r)
 	if !ok {
 		return
 	}
@@ -49,11 +49,6 @@ func (p *TaskProcessor) processPendingQueueAgent(ctx context.Context, r *models.
 
 	bannedCount := 0
 	for _, a := range agents {
-		if a.Addr.String() != agent.Addr.String() {
-			p.l.Info("cannot allow queue agent as another one is disconnected",
-				p.queueAgentLogFields(task, r, log.String("disconnected", a.Addr.String()))...)
-			return
-		}
 		if bool(a.Banned) {
 			bannedCount++
 		}
