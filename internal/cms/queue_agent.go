@@ -54,12 +54,12 @@ func (p *TaskProcessor) processPendingQueueAgent(ctx context.Context, r *models.
 		}
 	}
 
-	if float64(bannedCount+1) > p.conf.MaxBannedQueueAgentsPercent*float64(len(agents)) {
+	if float64(bannedCount+1) > p.conf.MaxBannedQueueAgents*float64(len(agents)) {
 		p.l.Info("cannot allow queue agent as max allowed banned percent will be exceeded",
 			p.queueAgentLogFields(task, r,
 				log.Int("banned_queue_agents", bannedCount),
 				log.Int("total_queue_agents", len(agents)),
-				log.Float64("max_banned_queue_agents_percent", p.conf.MaxBannedQueueAgentsPercent))...)
+				log.Float64("max_banned_queue_agents", p.conf.MaxBannedQueueAgents))...)
 		return
 	}
 

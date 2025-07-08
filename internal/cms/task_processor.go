@@ -31,6 +31,7 @@ const (
 	defaultOfflineHTTPProxyRetentionPeriod  = time.Minute * 10
 	defaultMaxHTTPProxiesPerRole            = 0.1
 	defaultMaxRPCProxiesPerRole             = 0.1
+	defaultMaxBannedQueueAgents             = 0.35
 	defaultCPUReserve                       = 27
 	defaultBundleSlotReserve                = 1
 	defaultTabletCommonNodeReserve          = 1
@@ -115,7 +116,7 @@ type TaskProcessorConfig struct {
 	OfflineHTTPProxyRetentionPeriod time.Duration `yaml:"offline_http_proxy_retention_period"`
 	MaxHTTPProxiesPerRole           float64       `yaml:"max_http_proxies_per_role"`
 	MaxRPCProxiesPerRole            float64       `yaml:"max_rpc_proxies_per_role"`
-	MaxBannedQueueAgentsPercent     float64       `yaml:"max_banned_queue_agents_percent"`
+	MaxBannedQueueAgents            float64       `yaml:"max_banned_queue_agents"`
 
 	RateLimits    RateLimitConfig `yaml:",inline"`
 	GPURateLimits RateLimitConfig `yaml:"gpu_rate_limits"`
@@ -219,6 +220,10 @@ func (c *TaskProcessorConfig) UnmarshalYAML(unmarshal func(any) error) error {
 
 	if c.MaxRPCProxiesPerRole <= 0 {
 		c.MaxRPCProxiesPerRole = defaultMaxRPCProxiesPerRole
+	}
+
+	if c.MaxBannedQueueAgents <= 0 {
+		c.MaxBannedQueueAgents = defaultMaxBannedQueueAgents
 	}
 
 	if c.UseMaxOfflineNodesConstraint {
