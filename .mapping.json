@@ -33,6 +33,7 @@
   "internal/cms/missing_chunks_throttler.go":"yt/admin/cms/internal/cms/missing_chunks_throttler.go",
   "internal/cms/mocks/storage_mock.go":"yt/admin/cms/internal/cms/mocks/storage_mock.go",
   "internal/cms/node.go":"yt/admin/cms/internal/cms/node.go",
+  "internal/cms/node_ban_limiter.go":"yt/admin/cms/internal/cms/node_ban_limiter.go",
   "internal/cms/proxy_cache_mock.go":"yt/admin/cms/internal/cms/proxy_cache_mock.go",
   "internal/cms/proxy_role_limits.go":"yt/admin/cms/internal/cms/proxy_role_limits.go",
   "internal/cms/queue_agent.go":"yt/admin/cms/internal/cms/queue_agent.go",

@@ -309,12 +309,8 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, r *models.Node) {
 	nodeWithoutChunks := storedChunkCount == 0 && node.State == ytsys.NodeStateOnline
 	nodeOffline := p.checkNodeOffline(node)
 
-	if !task.IsGroupTask && !nodeWithoutChunks && time.Since(p.lastNodeBanTime) < p.conf.BannedNodeHoldOffPeriod {
-		p.l.Info("can not ban node as another one was banned recently", p.nodeLogFields(task, r)...)
-		return
-	}
-
-	if task.IsGroupTask && task.TaskGroup != p.lastBannedNodeGroup && time.Since(p.lastNodeBanTime) < p.conf.BannedNodeHoldOffPeriod {
+	if !p.nodeBanLimiter.Allow() &&
+		((!task.IsGroupTask && !nodeWithoutChunks) || (task.IsGroupTask && task.TaskGroup != p.lastBannedNodeGroup)) {
 		p.l.Info("can not ban node as another one was banned recently", p.nodeLogFields(task, r)...)
 		return
 	}
@@ -348,7 +344,7 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, r *models.Node) {
 	}
 	p.l.Info("node banned", p.nodeLogFields(task, r)...)
 
-	p.lastNodeBanTime = time.Now()
+	p.nodeBanLimiter.LastBanTime = time.Now()
 	if task.IsGroupTask {
 		p.lastBannedNodeGroup = task.TaskGroup
 	}
@@ -539,13 +535,15 @@ func (p *TaskProcessor) nodeLogFields(t *models.Task, n *models.Node, extra ...l
 	return fields
 }
 
-func (p *TaskProcessor) unbanNodes(ctx context.Context) error {
+func (p *TaskProcessor) unbanNodesBecauseOfLVC(ctx context.Context) error {
 	tasks, err := p.storage.GetAll(ctx)
 	if err != nil {
 		return err
 	}
 
 	var firstError error
+	var unbanned bool
+
 	for _, t := range tasks {
 		if t.WalleStatus == walle.StatusOK {
 			continue
@@ -558,13 +556,23 @@ func (p *TaskProcessor) unbanNodes(ctx context.Context) error {
 				}
 
 				n := r.Role.(*models.Node)
+				if time.Since(time.Time(n.BanTime)) > p.conf.LVCUnbanWindow {
+					continue
+				}
+
 				p.l.Info("unbanning node", p.nodeLogFields(t, n)...)
 				err := p.unbanNode(ctx, t, n)
 				if err != nil && firstError == nil {
 					firstError = err
+				} else if err == nil {
+					unbanned = true
 				}
 			}
 		}
+	}
+
+	if unbanned {
+		p.nodeBanLimiter.Unbanned()
 	}
 
 	return firstError

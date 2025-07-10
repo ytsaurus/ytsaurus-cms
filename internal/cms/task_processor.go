@@ -26,6 +26,7 @@ const (
 	defaultMinGroupTaskSize                 = 2
 	defaultOfflineNodeRetentionPeriod       = time.Minute * 20
 	defaultBannedNodeHoldOffPeriod          = time.Minute * 3
+	defaultLVCUnbanWindow                   = time.Hour * 2
 	defaultDisabledSchedulerJobsWaitTimeout = time.Minute * 20
 	defaultDisabledWriteSessionsWaitTimeout = time.Minute * 20
 	defaultOfflineHTTPProxyRetentionPeriod  = time.Minute * 10
@@ -99,6 +100,10 @@ type TaskProcessorConfig struct {
 
 	OfflineNodeRetentionPeriod time.Duration `yaml:"offline_node_retention_period"`
 	BannedNodeHoldOffPeriod    time.Duration `yaml:"banned_node_hold_off_period"`
+	MaxBannedNodeHoldOffPeriod time.Duration `yaml:"max_banned_node_hold_off_period"`
+	// LVCUnbanWindow is a duration, after which node will not be unbanned because of LVC.
+	// It is assumed that all lost chunks will be found before LVCUnbanWindow has expired.
+	LVCUnbanWindow time.Duration `yaml:"lvc_unban_window"`
 	// DisabledSchedulerJobsWaitTimeout is a max time to wait for node's scheduler jobs to finish
 	// in fast decommission scenarios.
 	DisabledSchedulerJobsWaitTimeout time.Duration `yaml:"disabled_scheduler_jobs_wait_timeout"`
@@ -192,6 +197,14 @@ func (c *TaskProcessorConfig) UnmarshalYAML(unmarshal func(any) error) error {
 
 	if c.BannedNodeHoldOffPeriod <= 0 {
 		c.BannedNodeHoldOffPeriod = defaultBannedNodeHoldOffPeriod
+	}
+
+	if c.MaxBannedNodeHoldOffPeriod <= 0 {
+		c.MaxBannedNodeHoldOffPeriod = 3 * c.BannedNodeHoldOffPeriod
+	}
+
+	if c.LVCUnbanWindow <= 0 {
+		c.LVCUnbanWindow = defaultLVCUnbanWindow
 	}
 
 	if c.DisabledSchedulerJobsWaitTimeout <= 0 {
@@ -313,12 +326,12 @@ type TaskProcessor struct {
 	// hostAnnotations store additional host information retrieved from Wall-e.
 	hostAnnotations *HostAnnotations
 
-	// lastNodeBanTime stores a time of the latest node ban made by CMS.
-	// This value is used to limit the number of parallel node bans.
-	lastNodeBanTime time.Time
 	// lastBannedNodeGroup stores group name of a last banned node
 	// belonging to a group task.
 	lastBannedNodeGroup string
+	// nodeBanLimiter stores a time of the latest node ban and unbans made by CMS.
+	// It is used to limit the number of parallel node bans, increasing ban interval, if LVC found.
+	nodeBanLimiter *NodeBanLimiter
 
 	chunkIntegrity         *ytsys.ChunkIntegrity
 	missingChunksThrottler *MissingChunksThrottler
@@ -379,6 +392,7 @@ func (p *TaskProcessor) reset(tasks []*models.Task) {
 	p.rpcProxyRoleLimits = NewProxyRoleLimits(p.Conf().MaxRPCProxiesPerRole, &rpcProxyCache{c: p.cluster})
 	p.initRateLimiter(tasks)
 	p.initGPURateLimiter(tasks)
+	p.nodeBanLimiter = NewNodeBanLimiter(p.conf.BannedNodeHoldOffPeriod, p.conf.MaxBannedNodeHoldOffPeriod)
 	p.initLastNodeBanTime(tasks)
 }
 
@@ -429,15 +443,17 @@ func (p *TaskProcessor) initGPURateLimiter(tasks []*models.Task) {
 
 // initLastNodeBanTime initializes last node ban time.
 func (p *TaskProcessor) initLastNodeBanTime(tasks []*models.Task) {
-	if !p.lastNodeBanTime.IsZero() {
+	if !p.nodeBanLimiter.LastBanTime.IsZero() {
 		return
 	}
+
+	var lastBanTime time.Time
 
 	for _, t := range tasks {
 		for _, n := range t.GetNodes() {
 			banTime := time.Time(n.BanTime)
-			if n.Banned && banTime.After(p.lastNodeBanTime) {
-				p.lastNodeBanTime = banTime
+			if n.Banned && banTime.After(lastBanTime) {
+				lastBanTime = banTime
 				if t.IsGroupTask {
 					p.lastBannedNodeGroup = t.TaskGroup
 				}
@@ -445,8 +461,9 @@ func (p *TaskProcessor) initLastNodeBanTime(tasks []*models.Task) {
 		}
 	}
 
+	p.nodeBanLimiter.LastBanTime = lastBanTime
 	p.l.Info("setting last node ban time",
-		log.Time("last_node_ban_time", p.lastNodeBanTime),
+		log.Time("last_node_ban_time", lastBanTime),
 		log.String("last_banned_node_group", p.lastBannedNodeGroup))
 }
 
@@ -656,10 +673,10 @@ func (p *TaskProcessor) checkChunkIntegrity(ctx context.Context) error {
 
 	if i.LVC > 0 || i.QMC > 0 {
 		p.l.Info("LVC > 0 or QMC > 0 -> unbanning nodes", log.Int64("lvc", i.LVC), log.Int64("qmc", i.QMC))
-		if err := p.unbanNodes(ctx); err != nil {
+		if err := p.unbanNodesBecauseOfLVC(ctx); err != nil {
 			p.l.Error("error unbanning nodes", log.Error(err))
 		} else {
-			p.lastNodeBanTime = time.Time{}
+			p.nodeBanLimiter.LastBanTime = time.Time{}
 		}
 	} else {
 		p.l.Info("LVC is 0")
