@@ -2,6 +2,8 @@ package cms
 
 import (
 	"context"
+	"strings"
+	"time"
 
 	"go.ytsaurus.tech/library/go/core/log"
 	"go.ytsaurus.tech/yt/admin/cms/internal/models"
@@ -76,11 +78,11 @@ func (p *TaskProcessor) decommissionQueueAgent(ctx context.Context, r *models.Qu
 		p.l.Error("unable to find queue agent", p.queueAgentLogFields(task, r)...)
 		return
 	}
-
+	var req *ytsys.MaintenanceRequest
 	if !agent.InMaintenance {
 		p.l.Info("starting queue agent maintenance", p.queueAgentLogFields(task, r)...)
 
-		req := r.MaintenanceRequest
+		req = r.MaintenanceRequest
 		if req == nil {
 			req = p.makeMaintenanceRequest(task)
 		}
@@ -91,9 +93,24 @@ func (p *TaskProcessor) decommissionQueueAgent(ctx context.Context, r *models.Qu
 			p.failedMaintenanceRequestUpdates.Inc()
 			return
 		}
-
-		p.l.Info("queue agent maintenance started", p.queueAgentLogFields(task, r)...)
+	}
+	if r.MaintenanceRequest == nil {
+		p.l.Info("starting queue agent role maintenance", p.queueAgentLogFields(task, r)...)
 		r.StartMaintenance(req)
+		p.tryUpdateTaskInStorage(ctx, task)
+	}
+
+	if !agent.Banned {
+		p.l.Info("banning queue agent", p.queueAgentLogFields(task, r)...)
+		if err := p.dc.Ban(ctx, agent, p.makeBanMessage(task)); err != nil {
+			p.l.Error("error banning queue agent", p.queueAgentLogFields(task, r, log.Error(err))...)
+			p.failedBans.Inc()
+			return
+		}
+	}
+	if !r.Banned {
+		p.l.Info("banning queue agent role", p.queueAgentLogFields(task, r)...)
+		r.Ban()
 		p.tryUpdateTaskInStorage(ctx, task)
 	}
 
@@ -111,6 +128,32 @@ func (p *TaskProcessor) activateQueueAgent(ctx context.Context, r *models.QueueA
 		return
 	}
 
+	permanentBan := false
+	if strings.Contains(agent.BanMessage, permanentBanSubstr) {
+		p.l.Info("can not unban queue agent with %s in ban message",
+			p.queueAgentLogFields(task, r, log.String("ban_message", agent.BanMessage))...)
+		permanentBan = true
+	}
+
+	bannedRecently := time.Time(r.BanTime).After(p.cluster.LastReloadTime())
+	// Queue agent must be unbanned if ban message does not contain
+	// permanentBanSubstr and one of the following cases is true:
+	// 1. Cluster state is fresh and queue agent is banned.
+	// 2. Cluster state is stale and thus ban status is stale.
+	if !permanentBan && (bool(agent.Banned) || !bool(agent.Banned) && bannedRecently) {
+		p.l.Info("unbanning queue agent", p.queueAgentLogFields(task, r)...)
+		if err := p.dc.Unban(ctx, agent); err != nil {
+			p.l.Error("error unbanning queue agent", p.queueAgentLogFields(task, r, log.Error(err))...)
+			p.failedUnbans.Inc()
+			return
+		}
+	}
+	if r.Banned {
+		p.l.Info("unbanning queue agent role", p.queueAgentLogFields(task, r)...)
+		r.Unban()
+		p.tryUpdateTaskInStorage(ctx, task)
+	}
+
 	if agent.InMaintenance {
 		p.l.Info("finishing queue agent maintenance", p.queueAgentLogFields(task, r)...)
 		if err := p.dc.UnsetMaintenance(ctx, agent, r.MaintenanceRequest.GetID()); err != nil {
@@ -119,11 +162,9 @@ func (p *TaskProcessor) activateQueueAgent(ctx context.Context, r *models.QueueA
 			p.failedMaintenanceRequestUpdates.Inc()
 			return
 		}
-		p.l.Info("queue agent maintenance finished", p.queueAgentLogFields(task, r)...)
 	}
-
 	if r.InMaintenance {
-		p.l.Info("finishing queue agent maintenance", p.queueAgentLogFields(task, r)...)
+		p.l.Info("finishing queue agent role maintenance", p.queueAgentLogFields(task, r)...)
 		r.FinishMaintenance()
 		p.tryUpdateTaskInStorage(ctx, task)
 	}

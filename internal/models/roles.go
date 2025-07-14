@@ -391,6 +391,10 @@ type QueueAgent struct {
 	MaintenanceFinishTime yson.Time                 `json:"maintenance_finish_time" yson:"maintenance_finish_time"`
 	MaintenanceRequest    *ytsys.MaintenanceRequest `json:"maintenance_request" yson:"maintenance_request"`
 
+	Banned    bool      `json:"banned" yson:"banned"`
+	BanTime   yson.Time `json:"ban_time" yson:"ban_time"`
+	UnbanTime yson.Time `json:"unban_time" yson:"unban_time"`
+
 	State QueueAgentProcessingState `json:"state" yson:"state"`
 }
 
@@ -431,6 +435,16 @@ func (a *QueueAgent) Finished() bool {
 
 func (a *QueueAgent) SetFinished() {
 	a.State = QueueAgentStateFinished
+}
+
+func (a *QueueAgent) Ban() {
+	a.Banned = true
+	a.BanTime = yson.Time(time.Now().UTC())
+}
+
+func (a *QueueAgent) Unban() {
+	a.Banned = false
+	a.UnbanTime = yson.Time(time.Now().UTC())
 }
 
 func (a *QueueAgent) StartMaintenance(req *ytsys.MaintenanceRequest) {
