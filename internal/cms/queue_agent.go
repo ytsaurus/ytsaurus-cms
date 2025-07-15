@@ -148,7 +148,7 @@ func (p *TaskProcessor) activateQueueAgent(ctx context.Context, r *models.QueueA
 			return
 		}
 	}
-	if r.Banned {
+	if !permanentBan && r.Banned {
 		p.l.Info("unbanning queue agent role", p.queueAgentLogFields(task, r)...)
 		r.Unban()
 		p.tryUpdateTaskInStorage(ctx, task)
