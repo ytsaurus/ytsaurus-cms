@@ -306,7 +306,7 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, r *models.Node) {
 	}
 
 	storedChunkCount := node.Statistics.TotalStoredChunkCount
-	nodeWithoutChunks := storedChunkCount == 0 && node.State == ytsys.NodeStateOnline
+	nodeWithoutChunks := storedChunkCount == 0 && (node.State == ytsys.NodeStateOnline || !r.HasFlavor(ytsys.FlavorData))
 	nodeOffline := p.checkNodeOffline(node)
 
 	if !p.nodeBanLimiter.Allow() &&
