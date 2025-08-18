@@ -253,18 +253,18 @@ func (s *System) run(ctx context.Context) error {
 
 	g.Go(func() error {
 		s.l.Info("starting task discovery")
-		err := s.taskDiscoverer.runTaskDiscovery(ctx, s.conf, s.storage, s.l)
+		err := s.taskDiscoverer.runTaskDiscovery(gctx, s.conf, s.storage, s.l)
 		s.l.Info("stopped task discovery")
 		return err
 	})
 
 	g.Go(func() error {
-		return s.taskProcessor.Run(ctx)
+		return s.taskProcessor.Run(gctx)
 	})
 
 	if s.conf.EnableHotSwapProcessing {
 		g.Go(func() error {
-			return s.hotSwapProcessor.Run(ctx)
+			return s.hotSwapProcessor.Run(gctx)
 		})
 	}
 
