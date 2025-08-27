@@ -91,7 +91,7 @@ func (c *Client) GetHostInfo(ctx context.Context, hosts ...string) (map[string]*
 	for cursor := 0; ; {
 		resp, err := c.httpClient.R().
 			SetContext(ctx).
-			SetQueryParam("fields", "name,ticket").
+			SetQueryParam("fields", "name,status,ticket").
 			SetQueryParam("cursor", strconv.Itoa(cursor)).
 			SetBody(map[string][]string{
 				"names": hosts,
@@ -109,7 +109,7 @@ func (c *Client) GetHostInfo(ctx context.Context, hosts ...string) (map[string]*
 			return nil, xerrors.Errorf("unable to get host info: %s", msg)
 		}
 
-		if resp.StatusCode() != http.StatusOK {
+		if !resp.IsSuccess() {
 			return nil, xerrors.Errorf("bad response status code: %d", resp.StatusCode())
 		}
 
@@ -130,5 +130,6 @@ func (c *Client) GetHostInfo(ctx context.Context, hosts ...string) (map[string]*
 
 type HostInfo struct {
 	Name   string `json:"name"`
+	Status string `json:"status"`
 	Ticket string `json:"ticket"`
 }
