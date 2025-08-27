@@ -37,7 +37,7 @@ func main() {
 	conf.StartrekConfig.OAuthToken = os.Getenv("STARTREK_OAUTH_TOKEN")
 
 	if err := conf.Init(logger); err != nil {
-		logger.Fatalf(err.Error())
+		logger.Fatal("failed to init config fields", log.Error(err))
 	}
 
 	g, ctx := errgroup.WithContext(context.Background())
