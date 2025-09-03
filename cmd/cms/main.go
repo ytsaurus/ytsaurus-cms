@@ -74,7 +74,7 @@ func newLogger(logToStderr bool, logDir string) (*logzap.Logger, func()) {
 		return ytlog.Must(), func() {}
 	}
 
-	l, stop, err := ytlog.NewSelfrotate(filepath.Join(logDir, "cms.log"))
+	l, stop, err := ytlog.NewSelfrotate(filepath.Join(logDir, "cms.log"), ytlog.WithMinFreeSpace(0.1))
 	if err != nil {
 		panic(err)
 	}
