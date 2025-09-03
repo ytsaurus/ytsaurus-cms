@@ -311,7 +311,8 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, r *models.Node) {
 
 	if !p.nodeBanLimiter.Allow() &&
 		((!task.IsGroupTask && !nodeWithoutChunks) || (task.IsGroupTask && task.TaskGroup != p.lastBannedNodeGroup)) {
-		p.l.Info("can not ban node as another one was banned recently", p.nodeLogFields(task, r)...)
+		p.l.Info("can not ban node as another one was banned recently",
+			p.nodeLogFields(task, r, log.Time("last_ban_time", p.nodeBanLimiter.LastBanTime))...)
 		return
 	}
 

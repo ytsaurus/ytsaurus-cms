@@ -675,8 +675,6 @@ func (p *TaskProcessor) checkChunkIntegrity(ctx context.Context) error {
 		p.l.Info("LVC > 0 or QMC > 0 -> unbanning nodes", log.Int64("lvc", i.LVC), log.Int64("qmc", i.QMC))
 		if err := p.unbanNodesBecauseOfLVC(ctx); err != nil {
 			p.l.Error("error unbanning nodes", log.Error(err))
-		} else {
-			p.nodeBanLimiter.LastBanTime = time.Time{}
 		}
 	} else {
 		p.l.Info("LVC is 0")
