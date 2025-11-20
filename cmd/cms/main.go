@@ -5,13 +5,11 @@ import (
 	"flag"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
 	"go.ytsaurus.tech/library/go/core/log"
 	logzap "go.ytsaurus.tech/library/go/core/log/zap"
 	"go.ytsaurus.tech/yt/admin/cms/internal/app"
-	"go.ytsaurus.tech/yt/go/ytlog"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/xerrors"
 	"gopkg.in/yaml.v2"
@@ -22,10 +20,11 @@ func main() {
 
 	logToStderr := flag.Bool("log-to-stderr", false, "write logs to stderr")
 	logDir := flag.String("log-dir", "/logs", "log output directory")
+	uaLogsURL := flag.String("ua-url", "", "url (host:port) for unified agent client")
 	configPath := flag.String("config", "", "path to the yaml config")
 	flag.Parse()
 
-	logger, stop := newLogger(*logToStderr, *logDir)
+	logger, stop := newLogger(*logToStderr, *logDir, WithUALogsURL(*uaLogsURL))
 	defer stop()
 
 	conf, err := readConfig(*configPath)
@@ -47,12 +46,12 @@ func main() {
 
 	g.Go(ensureError(func() error {
 		err := app.NewApp(conf, logger).Run(ctx)
-		logger.Info("app stopped", log.Error(err))
+		logger.Debug("app stopped", log.Error(err))
 		return err
 	}))
 
 	if err := g.Wait(); err != nil {
-		logger.Info("main stopped", log.Error(err))
+		logger.Debug("main stopped", log.Error(err))
 	}
 }
 
@@ -67,21 +66,6 @@ func readConfig(path string) (*app.Config, error) {
 	return &conf, err
 }
 
-// newLogger initializes debugging logger
-// that either writes to stderr or to cms.log in given directory.
-func newLogger(logToStderr bool, logDir string) (*logzap.Logger, func()) {
-	if logToStderr {
-		return ytlog.Must(), func() {}
-	}
-
-	l, stop, err := ytlog.NewSelfrotate(filepath.Join(logDir, "cms.log"), ytlog.WithMinFreeSpace(0.1))
-	if err != nil {
-		panic(err)
-	}
-
-	return l, stop
-}
-
 // waitSignal blocks until SIGINT or SIGTERM is received.
 //
 // Can be canceled via ctx.
@@ -90,7 +74,7 @@ func waitSignal(ctx context.Context, l *logzap.Logger) error {
 	signal.Notify(exitSignal, syscall.SIGINT, syscall.SIGTERM)
 	select {
 	case s := <-exitSignal:
-		l.Info("received signal", log.String("signal", s.String()))
+		l.Warn("received signal", log.String("signal", s.String()))
 		return xerrors.New("interrupted")
 	case <-ctx.Done():
 		return nil

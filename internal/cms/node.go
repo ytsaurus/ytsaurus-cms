@@ -39,7 +39,7 @@ var nodeKey nodeKeyType
 
 func (p *TaskProcessor) processNode(ctx context.Context, r *models.Node) {
 	task := ctx.Value(taskKey).(*models.Task)
-	p.l.Info("processing node", p.nodeLogFields(task, r)...)
+	p.l.Debug("processing node", p.nodeLogFields(task, r)...)
 
 	node, ok := p.resolveNodeComponent(task, r)
 	if !ok {
@@ -60,7 +60,7 @@ func (p *TaskProcessor) processNode(ctx context.Context, r *models.Node) {
 	}
 
 	if !p.checkOfflineNodesConstraint(ctx, r) {
-		p.l.Info("offline node constraint failed -> skipping node", p.nodeLogFields(task, r)...)
+		p.l.Debug("offline node constraint failed -> skipping node", p.nodeLogFields(task, r)...)
 		return
 	}
 
@@ -88,7 +88,7 @@ func (p *TaskProcessor) checkOfflineNodesConstraint(ctx context.Context, r *mode
 	}
 
 	_, nodeOffline := offlineNodes[*r.Addr]
-	p.l.Info("checking max_offline_nodes constraint",
+	p.l.Debug("checking max_offline_nodes constraint",
 		p.nodeLogFields(task, r,
 			log.Int("max_offline_nodes", p.conf.MaxOfflineNodes),
 			log.Int("offline_node_count", len(offlineNodes)),
@@ -107,13 +107,13 @@ func (p *TaskProcessor) processPendingNode(ctx context.Context, r *models.Node) 
 	node := ctx.Value(nodeKey).(*ytsys.Node)
 
 	if node.Banned {
-		p.l.Info("node is banned -> proceeding to decommission", p.nodeLogFields(task, r)...)
+		p.l.Debug("node is banned -> proceeding to decommission", p.nodeLogFields(task, r)...)
 		p.decommissionNode(ctx, r)
 		return
 	}
 
 	if p.checkNodeOffline(node) {
-		p.l.Info("node is offline for a long time -> proceeding to decommission",
+		p.l.Debug("node is offline for a long time -> proceeding to decommission",
 			p.nodeLogFields(task, r, log.Time("last_seen_time", time.Time(node.LastSeenTime)))...)
 		p.decommissionNode(ctx, r)
 		return
@@ -198,12 +198,12 @@ func (p *TaskProcessor) checkDecommissionReady(ctx context.Context, r *models.No
 
 	if !o.SkipConstraintCheck {
 		if !p.checkNodeConstraints(ctx, r) {
-			p.l.Info("node constraints are not met -> postponing node decommission", p.nodeLogFields(task, r)...)
+			p.l.Debug("node constraints are not met -> postponing node decommission", p.nodeLogFields(task, r)...)
 			return false
 		}
-		p.l.Info("node constraints are met -> proceeding to decommission", p.nodeLogFields(task, r)...)
+		p.l.Debug("node constraints are met -> proceeding to decommission", p.nodeLogFields(task, r)...)
 	} else {
-		p.l.Info("skipping node constraints check -> proceeding to decommission", p.nodeLogFields(task, r)...)
+		p.l.Debug("skipping node constraints check -> proceeding to decommission", p.nodeLogFields(task, r)...)
 	}
 
 	if err := p.startChunkDecommission(ctx, r); err != nil {
@@ -249,16 +249,16 @@ func (p *TaskProcessor) checkNodeConstraints(ctx context.Context, r *models.Node
 	task := ctx.Value(taskKey).(*models.Task)
 
 	if !p.checkResourceLimits(ctx, r) {
-		p.l.Info("resource limits are not met -> postponing node decommission", p.nodeLogFields(task, r)...)
+		p.l.Debug("resource limits are not met -> postponing node decommission", p.nodeLogFields(task, r)...)
 		return false
 	}
-	p.l.Info("node resource limits are met", p.nodeLogFields(task, r)...)
+	p.l.Debug("node resource limits are met", p.nodeLogFields(task, r)...)
 
 	if !p.checkTabletCellGuarantees(ctx, r) {
-		p.l.Info("tablet cell guarantees are not met -> postponing node decommission", p.nodeLogFields(task, r)...)
+		p.l.Debug("tablet cell guarantees are not met -> postponing node decommission", p.nodeLogFields(task, r)...)
 		return false
 	}
-	p.l.Info("tablet cell guarantees are met", p.nodeLogFields(task, r)...)
+	p.l.Debug("tablet cell guarantees are met", p.nodeLogFields(task, r)...)
 
 	return true
 }
@@ -291,10 +291,10 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, r *models.Node) {
 		}
 
 		if p.checkNodeOffline(node) {
-			p.l.Info("allowing walle to take inactive node (banned and offline)", p.nodeLogFields(task, r)...)
+			p.l.Debug("allowing walle to take inactive node (banned and offline)", p.nodeLogFields(task, r)...)
 			p.allowNode(ctx, node, r)
 		} else {
-			p.l.Info("not allowing walle to take banned node yet",
+			p.l.Debug("not allowing walle to take banned node yet",
 				p.nodeLogFields(task, r,
 					log.String("node_state", node.State),
 					log.Time("last_seen_time", time.Time(node.LastSeenTime)),
@@ -311,7 +311,7 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, r *models.Node) {
 
 	if !p.nodeBanLimiter.Allow() &&
 		((!task.IsGroupTask && !nodeWithoutChunks) || (task.IsGroupTask && task.TaskGroup != p.lastBannedNodeGroup)) {
-		p.l.Info("can not ban node as another one was banned recently",
+		p.l.Debug("can not ban node as another one was banned recently",
 			p.nodeLogFields(task, r, log.Time("last_ban_time", p.nodeBanLimiter.LastBanTime))...)
 		return
 	}
@@ -321,7 +321,7 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, r *models.Node) {
 		(chunkIntegrityIntact || !chunkIntegrityIntact && storedChunkCount <= p.conf.IgnorePMCThreshold)
 
 	if task.IsGroupTask && !task.IsUrgent() && !nodeOffline && !nodeWithoutChunks {
-		p.l.Info("will not ban node as maintenance is far ahead",
+		p.l.Debug("will not ban node as maintenance is far ahead",
 			p.nodeLogFields(task, r, log.String("indicators", p.chunkIntegrity.String()),
 				log.Int64("total_stored_chunks", storedChunkCount),
 				log.Time("maintenance_start_time", task.ScenarioInfo.MaintenanceStart()),
@@ -330,14 +330,14 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, r *models.Node) {
 	}
 
 	if !task.IsGroupTask && !nodeWithoutChunks && !unrecoverableDataSafe {
-		p.l.Info("can not ban node as unrecoverable data might be in danger",
+		p.l.Debug("can not ban node as unrecoverable data might be in danger",
 			p.nodeLogFields(task, r, log.String("indicators", p.chunkIntegrity.String()),
 				log.Int64("total_stored_chunks", storedChunkCount),
 				log.Int64("ignore_pmc_threshold", p.conf.IgnorePMCThreshold))...)
 		return
 	}
 
-	p.l.Info("banning node", p.nodeLogFields(task, r)...)
+	p.l.Debug("banning node", p.nodeLogFields(task, r)...)
 	if err := banNode(ctx, p.dc, node, p.conf.UseMaintenanceAPI, p.makeBanMessage(task)); err != nil {
 		p.l.Error("error banning node", p.nodeLogFields(task, r, log.Error(err))...)
 		p.failedBans.Inc()
@@ -355,7 +355,7 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, r *models.Node) {
 	p.tryUpdateTaskInStorage(ctx, task)
 
 	if nodeWithoutChunks {
-		p.l.Info("allowing walle to take node with no data", p.nodeLogFields(task, r)...)
+		p.l.Debug("allowing walle to take node with no data", p.nodeLogFields(task, r)...)
 		p.allowNode(ctx, node, r)
 		return
 	}
@@ -390,13 +390,13 @@ func (p *TaskProcessor) checkTabletCellsDecommissioned(ctx context.Context, r *m
 
 	for _, s := range node.TabletSlots {
 		if s.State != ytsys.TabletSlotStateNone {
-			p.l.Info("some tablet slots are not free -> continue waiting",
+			p.l.Debug("some tablet slots are not free -> continue waiting",
 				p.nodeLogFields(task, r, log.String("cell_id", s.CellID.String()))...)
 			return false
 		}
 	}
 
-	p.l.Info("all node tablet slots are free", p.nodeLogFields(task, r)...)
+	p.l.Debug("all node tablet slots are free", p.nodeLogFields(task, r)...)
 	return true
 }
 
@@ -406,13 +406,13 @@ func (p *TaskProcessor) checkChunksDecommissioned(ctx context.Context, r *models
 
 	if r.TotalStoredChunks != node.Statistics.TotalStoredChunkCount {
 		r.UpdateTotalStoredChunks(node.Statistics.TotalStoredChunkCount)
-		p.l.Info("updating node's total stored chunk count",
+		p.l.Debug("updating node's total stored chunk count",
 			p.nodeLogFields(task, r, log.Int64("total_stored_chunk_count", r.TotalStoredChunks))...)
 		p.tryUpdateTaskInStorage(ctx, task)
 	}
 
 	if node.Statistics.TotalStoredChunkCount == 0 {
-		p.l.Info("all chunks decommissioned", p.nodeLogFields(task, r)...)
+		p.l.Debug("all chunks decommissioned", p.nodeLogFields(task, r)...)
 		return true
 	}
 
@@ -432,7 +432,7 @@ func (p *TaskProcessor) checkChunksDecommissioned(ctx context.Context, r *models
 			}
 		}
 		if allUnconfirmed {
-			p.l.Info("node has small number of unconfirmed chunks after a long period of time",
+			p.l.Debug("node has small number of unconfirmed chunks after a long period of time",
 				p.nodeLogFields(task, r,
 					log.Duration("decommission_period", decommissionPeriod),
 					log.Int64("total_stored_chunk_count", node.Statistics.TotalStoredChunkCount))...)
@@ -511,12 +511,12 @@ func (p *TaskProcessor) makeBanMessage(task *models.Task) string {
 func (p *TaskProcessor) allowNode(ctx context.Context, n *ytsys.Node, r *models.Node) {
 	task := ctx.Value(taskKey).(*models.Task)
 
-	p.l.Info("executing pre allow hook", p.nodeLogFields(task, r)...)
+	p.l.Debug("executing pre allow hook", p.nodeLogFields(task, r)...)
 	if err := p.preNodeAllowHook(ctx, task, n, r); err != nil {
-		p.l.Info("pre allow hook execution failed", p.nodeLogFields(task, r, log.Error(err))...)
+		p.l.Debug("pre allow hook execution failed", p.nodeLogFields(task, r, log.Error(err))...)
 		return
 	}
-	p.l.Info("executed pre allow hook", p.nodeLogFields(task, r)...)
+	p.l.Debug("executed pre allow hook", p.nodeLogFields(task, r)...)
 
 	p.l.Info("allowing walle to take node", p.nodeLogFields(task, r)...)
 	r.AllowWalle()
@@ -529,6 +529,7 @@ func (p *TaskProcessor) nodeLogFields(t *models.Task, n *models.Node, extra ...l
 		log.String("task_id", string(t.ID)),
 		log.String("host", n.Host),
 		log.String("addr", n.Addr.String()),
+		log.String("pod_id", strings.Split(n.Addr.FQDN, ".")[0]),
 		log.Bool("group_task", t.IsGroupTask),
 		log.String("group_id", t.MaintenanceInfo.NodeSetID),
 	}
@@ -918,17 +919,17 @@ func (p *TaskProcessor) checkResourceLimits(ctx context.Context, r *models.Node)
 		return false
 	}
 	if tree == nil {
-		p.l.Info("node does not belong to any pool tree", p.nodeLogFields(task, r)...)
+		p.l.Debug("node does not belong to any pool tree", p.nodeLogFields(task, r)...)
 		return true
 	}
 
 	if ytsys.IsGPUPoolTree(tree) {
-		p.l.Info("node belongs to gpu pool tree -> checking gpu resource limits",
+		p.l.Debug("node belongs to gpu pool tree -> checking gpu resource limits",
 			p.nodeLogFields(task, r, log.String("pool_tree", tree.Name))...)
 		return p.checkGPULimits(ctx, r, tree)
 	}
 
-	p.l.Info("checking cpu resource limits", p.nodeLogFields(task, r, log.String("pool_tree", tree.Name))...)
+	p.l.Debug("checking cpu resource limits", p.nodeLogFields(task, r, log.String("pool_tree", tree.Name))...)
 	return p.checkCPULimits(ctx, r, tree)
 }
 
@@ -937,12 +938,12 @@ func (p *TaskProcessor) checkGPULimits(ctx context.Context, r *models.Node, tree
 	node := ctx.Value(nodeKey).(*ytsys.Node)
 
 	if node.ResourceLimits == nil {
-		p.l.Info("node is missing resource limits -> waiting", p.nodeLogFields(task, r)...)
+		p.l.Debug("node is missing resource limits -> waiting", p.nodeLogFields(task, r)...)
 		return false
 	}
 
 	if node.ResourceLimits.GPU == 0.0 || node.ResourceLimits.UserSlots == 0 {
-		p.l.Info("node has no gpu resources", p.nodeLogFields(task, r)...)
+		p.l.Debug("node has no gpu resources", p.nodeLogFields(task, r)...)
 		return true
 	}
 
@@ -957,7 +958,7 @@ func (p *TaskProcessor) checkGPULimits(ctx context.Context, r *models.Node, tree
 
 	requiredReserve := p.conf.GPUReserve
 
-	p.l.Info("calculated gpu resources",
+	p.l.Debug("calculated gpu resources",
 		p.nodeLogFields(task, r, log.Float64("available_gpu", available),
 			log.Float64("guaranteed_gpu", guaranteed),
 			log.Float64("node_gpu", node.ResourceLimits.GPU),
@@ -965,7 +966,7 @@ func (p *TaskProcessor) checkGPULimits(ctx context.Context, r *models.Node, tree
 			log.Float64("actual_reserve", reserve))...)
 
 	if reserve < requiredReserve {
-		p.l.Info("node can not be given as gpu limits will be broken")
+		p.l.Debug("node can not be given as gpu limits will be broken")
 		return false
 	}
 
@@ -977,12 +978,12 @@ func (p *TaskProcessor) checkCPULimits(ctx context.Context, r *models.Node, tree
 	node := ctx.Value(nodeKey).(*ytsys.Node)
 
 	if node.ResourceLimits == nil {
-		p.l.Info("node is missing resource limits -> waiting", p.nodeLogFields(task, r)...)
+		p.l.Debug("node is missing resource limits -> waiting", p.nodeLogFields(task, r)...)
 		return false
 	}
 
 	if node.ResourceLimits.CPU == 0.0 || node.ResourceLimits.UserSlots == 0 {
-		p.l.Info("node has no cpu resources", p.nodeLogFields(task, r)...)
+		p.l.Debug("node has no cpu resources", p.nodeLogFields(task, r)...)
 		return true
 	}
 
@@ -1008,7 +1009,7 @@ func (p *TaskProcessor) checkCPULimits(ctx context.Context, r *models.Node, tree
 		requiredReserve = absoluteReserve
 	}
 
-	p.l.Info("calculated cpu resources",
+	p.l.Debug("calculated cpu resources",
 		p.nodeLogFields(task, r, log.Float64("available_cpu", available),
 			log.Float64("guaranteed_cpu", guaranteed),
 			log.Float64("node_cpu", node.ResourceLimits.CPU),
@@ -1018,7 +1019,7 @@ func (p *TaskProcessor) checkCPULimits(ctx context.Context, r *models.Node, tree
 			log.Float64("actual_reserve", reserve))...)
 
 	if reserve < requiredReserve {
-		p.l.Info("node can not be given as cpu limits will be broken", p.nodeLogFields(task, r)...)
+		p.l.Debug("node can not be given as cpu limits will be broken", p.nodeLogFields(task, r)...)
 		return false
 	}
 
@@ -1030,7 +1031,7 @@ func (p *TaskProcessor) checkReservePoolResources(ctx context.Context, r *models
 	node := ctx.Value(nodeKey).(*ytsys.Node)
 
 	if !p.reservePool.Allow(ctx, node) {
-		p.l.Info(
+		p.l.Debug(
 			"strong_guarantee_resources/cpu of reserve pool less than node limit",
 			p.nodeLogFields(
 				task,
@@ -1071,7 +1072,7 @@ func (p *TaskProcessor) checkTabletCellGuarantees(ctx context.Context, r *models
 	}
 
 	if len(cellBundles.Bundles) == 0 {
-		p.l.Info("node has no active cells", p.nodeLogFields(task, r)...)
+		p.l.Debug("node has no active cells", p.nodeLogFields(task, r)...)
 
 		reserve := tabletCommonNodes
 		if bool(!node.Decommissioned) || !r.DecommissionInProgress {
@@ -1080,7 +1081,7 @@ func (p *TaskProcessor) checkTabletCellGuarantees(ctx context.Context, r *models
 
 		tabletCommonLimitApplicable := node.HasTag(ytsys.TabletCommonTag) && p.conf.TabletCommonNodeReserve > 0
 		if tabletCommonLimitApplicable && reserve < p.conf.TabletCommonNodeReserve {
-			p.l.Info("can not release node as there are not enough nodes tagged with 'tablet_common'",
+			p.l.Debug("can not release node as there are not enough nodes tagged with 'tablet_common'",
 				p.nodeLogFields(task, r,
 					log.Int("tablet_common_node_count", reserve),
 					log.Int("required_reserve", p.conf.TabletCommonNodeReserve))...)
@@ -1094,7 +1095,7 @@ func (p *TaskProcessor) checkTabletCellGuarantees(ctx context.Context, r *models
 	// Each bundle is iterated n (=number of bundle slots) times.
 	for _, b := range cellBundles.Bundles {
 		if b.Production != nil && !*b.Production {
-			p.l.Info("skipping bundle checks for bundle with @production=%false",
+			p.l.Debug("skipping bundle checks for bundle with @production=%false",
 				p.nodeLogFields(task, r, log.String("bundle", b.Name))...)
 			continue
 		}
@@ -1143,11 +1144,11 @@ func (p *TaskProcessor) fillNodeFlavors(ctx context.Context, t *models.Task, n *
 
 func (p *TaskProcessor) startNodeMaintenance(ctx context.Context, t *models.Task, n *ytsys.Node, r *models.Node) error {
 	if n.HasMaintenanceAttr() && r.InMaintenance {
-		p.l.Info("node maintenance request is already started", p.nodeLogFields(t, r)...)
+		p.l.Debug("node maintenance request is already started", p.nodeLogFields(t, r)...)
 		return nil
 	}
 
-	p.l.Info("starting node maintenance request", p.nodeLogFields(t, r)...)
+	p.l.Debug("starting node maintenance request", p.nodeLogFields(t, r)...)
 
 	req := r.MaintenanceRequest
 	if req == nil {
@@ -1178,7 +1179,7 @@ func (p *TaskProcessor) finishNodeMaintenance(ctx context.Context, t *models.Tas
 	}
 
 	if hasMaintenanceAttr {
-		p.l.Info("finishing node maintenance", p.nodeLogFields(t, r)...)
+		p.l.Debug("finishing node maintenance", p.nodeLogFields(t, r)...)
 		if err := p.dc.UnsetMaintenance(ctx, n, r.MaintenanceRequest.GetID()); err != nil {
 			p.l.Error("error finishing node maintenance",
 				p.nodeLogFields(t, r, log.Error(err))...)
@@ -1219,7 +1220,7 @@ func (p *TaskProcessor) sendGPUToTesting(ctx context.Context, t *models.Task, n 
 		return nil
 	}
 
-	p.l.Info("removing gpu prod tag", p.nodeLogFields(t, r)...)
+	p.l.Debug("removing gpu prod tag", p.nodeLogFields(t, r)...)
 	err := p.dc.RemoveTag(ctx, n.GetCypressPath(), ytsys.GPUProdTag)
 	if err != nil {
 		p.l.Error("error removing gpu prod tag",
@@ -1247,7 +1248,7 @@ func (p *TaskProcessor) logBundleStats(ctx context.Context, r *models.Node, b *y
 	node := ctx.Value(nodeKey).(*ytsys.Node)
 
 	freeSlots := p.getAvailableSlots(node, r, b)
-	p.l.Info("bundle stats", p.nodeLogFields(task, r,
+	p.l.Debug("bundle stats", p.nodeLogFields(task, r,
 		log.String("bundle", b.Name),
 		log.Int("free_slots_total", b.GetFreeSlots()),
 		log.Int("node_slots_bundle", b.GetNodeSlots(r.Addr)),
@@ -1268,7 +1269,7 @@ func (p *TaskProcessor) logBundleStats(ctx context.Context, r *models.Node, b *y
 			continue
 		}
 
-		p.l.Info("node slot stats",
+		p.l.Debug("node slot stats",
 			log.String("bundle", b.Name),
 			log.String("addr", addr.String()),
 			log.Any("stats", stats))

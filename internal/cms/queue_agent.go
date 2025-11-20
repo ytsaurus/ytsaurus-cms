@@ -12,7 +12,7 @@ import (
 
 func (p *TaskProcessor) processQueueAgent(ctx context.Context, r *models.QueueAgent) {
 	task := ctx.Value(taskKey).(*models.Task)
-	p.l.Info("processing queue agent", p.queueAgentLogFields(task, r)...)
+	p.l.Debug("processing queue agent", p.queueAgentLogFields(task, r)...)
 
 	if task.DeletionRequested {
 		p.l.Info("deletion requested -> activating queue agent", p.queueAgentLogFields(task, r)...)
@@ -44,7 +44,7 @@ func (p *TaskProcessor) processPendingQueueAgent(ctx context.Context, r *models.
 	}
 
 	if len(agents) <= 1 {
-		p.l.Info("cannot allow queue agent as there are not that many left",
+		p.l.Debug("cannot allow queue agent as there are not that many left",
 			p.queueAgentLogFields(task, r, log.Int("left_count", len(agents)))...)
 		return
 	}
@@ -57,7 +57,7 @@ func (p *TaskProcessor) processPendingQueueAgent(ctx context.Context, r *models.
 	}
 
 	if float64(bannedCount+1) > p.conf.MaxBannedQueueAgents*float64(len(agents)) {
-		p.l.Info("cannot allow queue agent as max allowed banned percent will be exceeded",
+		p.l.Debug("cannot allow queue agent as max allowed banned percent will be exceeded",
 			p.queueAgentLogFields(task, r,
 				log.Int("banned_queue_agents", bannedCount),
 				log.Int("total_queue_agents", len(agents)),
@@ -130,7 +130,7 @@ func (p *TaskProcessor) activateQueueAgent(ctx context.Context, r *models.QueueA
 
 	permanentBan := false
 	if strings.Contains(agent.BanMessage, permanentBanSubstr) {
-		p.l.Info("can not unban queue agent with %s in ban message",
+		p.l.Debug("can not unban queue agent with %s in ban message",
 			p.queueAgentLogFields(task, r, log.String("ban_message", agent.BanMessage))...)
 		permanentBan = true
 	}
@@ -155,7 +155,7 @@ func (p *TaskProcessor) activateQueueAgent(ctx context.Context, r *models.QueueA
 	}
 
 	if agent.InMaintenance {
-		p.l.Info("finishing queue agent maintenance", p.queueAgentLogFields(task, r)...)
+		p.l.Debug("finishing queue agent maintenance", p.queueAgentLogFields(task, r)...)
 		if err := p.dc.UnsetMaintenance(ctx, agent, r.MaintenanceRequest.GetID()); err != nil {
 			p.l.Error("error finishing queue agent maintenance",
 				p.queueAgentLogFields(task, r, log.Error(err))...)

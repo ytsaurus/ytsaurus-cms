@@ -180,11 +180,11 @@ func (s *System) RegisterAPI(r chi.Router) {
 
 // Run starts background CMS task processing.
 func (s *System) Run(ctx context.Context) error {
-	s.l.Info("migrating tables")
+	s.l.Debug("migrating tables")
 	if err := s.ensureTables(ctx); err != nil {
 		return err
 	}
-	s.l.Info("migrated tables")
+	s.l.Debug("migrated tables")
 
 	s.api.SetReady()
 	s.systemAPI.SetReady()
@@ -200,8 +200,15 @@ func (s *System) Run(ctx context.Context) error {
 		s.leading.Set(0)
 		s.resetLeaderMetrics()
 
-		if yterrors.ContainsErrorCode(err, yterrors.CodeConcurrentTransactionLockConflict) {
-			s.l.Debug("failed to acquire lock", log.Error(err))
+		if ytErr := yterrors.FindErrorCode(err, yterrors.CodeConcurrentTransactionLockConflict); ytErr != nil {
+			// RPC server wraps real 402 error into outer 402 error, which has no winner_transaction attribute.
+			// Unwrapping inner error here.
+			if len(ytErr.InnerErrors) > 0 {
+				err = ytErr.InnerErrors[0]
+			}
+			s.l.Debug("failed to acquire lock", log.Error(err),
+				log.Any("yt_error", ytErr.Error()),
+				log.Any("yt_inner_errors", ytErr.InnerErrors))
 		} else if errors.Is(err, ytlock.ErrLockLost) {
 			s.l.Debug("lock lost")
 		}
@@ -236,7 +243,7 @@ func (s *System) hotswapTasksPath() ypath.Path {
 
 // run polls cluster state and processes CMS tasks including YP maintenance requests.
 func (s *System) run(ctx context.Context) error {
-	s.l.Info("acquired lock")
+	s.l.Debug("acquired lock")
 	s.leader.Store("")
 
 	s.restarts.Inc()
@@ -245,16 +252,16 @@ func (s *System) run(ctx context.Context) error {
 	g, gctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		s.l.Info("starting cluster polling")
+		s.l.Debug("starting cluster polling")
 		err := s.runClusterPolling(gctx)
-		s.l.Info("stopped cluster polling", log.Error(err))
+		s.l.Debug("stopped cluster polling", log.Error(err))
 		return err
 	})
 
 	g.Go(func() error {
-		s.l.Info("starting task discovery")
+		s.l.Debug("starting task discovery")
 		err := s.taskDiscoverer.runTaskDiscovery(gctx, s.conf, s.storage, s.l)
-		s.l.Info("stopped task discovery")
+		s.l.Debug("stopped task discovery")
 		return err
 	})
 
@@ -278,7 +285,7 @@ func (s *System) updateLeader(ctx context.Context, tx *ytlock.WinnerTx) {
 	if err != nil {
 		s.l.Warn("failed to get winner URL", log.Error(err))
 	} else {
-		s.l.Info("other leader is active", log.String("leader_url", l))
+		s.l.Debug("other leader is active", log.String("leader_url", l))
 		s.leader.Store(l)
 	}
 }
@@ -301,7 +308,7 @@ func (s *System) ensureTables(ctx context.Context) error {
 		tables[s.hotswapTasksPath()] = migrate.Table{Schema: schema.MustInfer(&models.HotSwapTask{})}
 	}
 
-	s.l.Info("path", log.String("path", s.tasksPath().String()))
+	s.l.Debug("tasks_path", log.String("path", s.tasksPath().String()))
 	return backoff.RetryNotify(
 		func() error {
 			return migrate.EnsureTables(ctx, s.yc, tables, migrate.OnConflictFail)
@@ -325,6 +332,6 @@ func (s *System) runClusterPolling(ctx context.Context) error {
 			s.clusterUpdateErrors.Inc()
 			return
 		}
-		s.l.Info("reloaded cluster state")
+		s.l.Debug("reloaded cluster state")
 	})
 }

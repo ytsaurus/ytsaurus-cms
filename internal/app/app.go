@@ -42,7 +42,7 @@ func NewApp(conf *Config, l log.Structured) *App {
 //
 // Can be canceled via context.
 func (a *App) Run(ctx context.Context) error {
-	a.l.Info("starting app")
+	a.l.Debug("starting app")
 
 	g, gctx := errgroup.WithContext(ctx)
 
@@ -134,7 +134,7 @@ func (a *App) runHTTPServer(ctx context.Context, s *http.Server) {
 
 	<-ctx.Done()
 
-	a.l.Info("waiting for http server to stop",
+	a.l.Debug("waiting for http server to stop",
 		log.String("addr", a.conf.HTTPAddr), log.Duration("timeout", httpGracefulStopTimeout))
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), httpGracefulStopTimeout)

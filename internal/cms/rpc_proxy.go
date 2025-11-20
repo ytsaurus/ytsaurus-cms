@@ -16,7 +16,7 @@ var rpcProxyKey rpcProxyKeyType
 
 func (p *TaskProcessor) processRPCProxy(ctx context.Context, r *models.RPCProxy) {
 	task := ctx.Value(taskKey).(*models.Task)
-	p.l.Info("processing rpc proxy", p.rpcProxyLogFields(task, r)...)
+	p.l.Debug("processing rpc proxy", p.rpcProxyLogFields(task, r)...)
 
 	proxy, ok := p.resolveRPCProxy(task, r)
 	if !ok {
@@ -56,13 +56,13 @@ func (p *TaskProcessor) processPendingRPCProxy(
 	}
 
 	if proxy.Banned {
-		p.l.Info("rpc proxy is banned -> proceeding to decommission", p.rpcProxyLogFields(task, r)...)
+		p.l.Debug("rpc proxy is banned -> proceeding to decommission", p.rpcProxyLogFields(task, r)...)
 		p.decommissionRPCProxy(ctx, task, proxy, r)
 		return
 	}
 
 	if !p.checkRPCProxyAlive(proxy) {
-		p.l.Info("last rpc proxy update was a long time age -> proceeding to decommission",
+		p.l.Debug("last rpc proxy update was a long time age -> proceeding to decommission",
 			p.rpcProxyLogFields(task, r)...)
 		p.decommissionRPCProxy(ctx, task, proxy, r)
 		return
@@ -70,10 +70,10 @@ func (p *TaskProcessor) processPendingRPCProxy(
 
 	p.rpcProxyRoleLimits.Reload()
 	if p.rpcProxyRoleLimits.Ban(proxy) {
-		p.l.Info("rate limits allow rpc proxy decommission", p.rpcProxyLogFields(task, r)...)
+		p.l.Debug("rate limits allow rpc proxy decommission", p.rpcProxyLogFields(task, r)...)
 		p.decommissionRPCProxy(ctx, task, proxy, r)
 	} else {
-		p.l.Info("rate limits forbid rpc proxy decommission", p.rpcProxyLogFields(task, r)...)
+		p.l.Debug("rate limits forbid rpc proxy decommission", p.rpcProxyLogFields(task, r)...)
 	}
 }
 
@@ -84,11 +84,11 @@ func (p *TaskProcessor) startRPCProxyMaintenance(
 	r *models.RPCProxy,
 ) error {
 	if proxy.HasMaintenanceAttr() && r.InMaintenance {
-		p.l.Info("rpc proxy maintenance request is already started", p.rpcProxyLogFields(task, r)...)
+		p.l.Debug("rpc proxy maintenance request is already started", p.rpcProxyLogFields(task, r)...)
 		return nil
 	}
 
-	p.l.Info("starting rpc proxy maintenance request", p.rpcProxyLogFields(task, r)...)
+	p.l.Debug("starting rpc proxy maintenance request", p.rpcProxyLogFields(task, r)...)
 
 	req := r.MaintenanceRequest
 	if req == nil {
@@ -124,7 +124,7 @@ func (p *TaskProcessor) finishRPCProxyMaintenance(
 	}
 
 	if hasMaintenanceAttr {
-		p.l.Info("finishing rpc proxy maintenance", p.rpcProxyLogFields(task, r)...)
+		p.l.Debug("finishing rpc proxy maintenance", p.rpcProxyLogFields(task, r)...)
 		if err := p.dc.UnsetMaintenance(ctx, proxy, r.MaintenanceRequest.GetID()); err != nil {
 			p.l.Error("error finishing rpc proxy maintenance",
 				p.rpcProxyLogFields(task, r, log.Error(err))...)
@@ -151,7 +151,7 @@ func (p *TaskProcessor) decommissionRPCProxy(
 	r *models.RPCProxy,
 ) {
 	if !proxy.Banned {
-		p.l.Info("banning rpc proxy", p.rpcProxyLogFields(task, r)...)
+		p.l.Debug("banning rpc proxy", p.rpcProxyLogFields(task, r)...)
 		if err := p.dc.Ban(ctx, proxy, p.makeBanMessage(task)); err != nil {
 			p.l.Error("error banning rpc proxy", p.rpcProxyLogFields(task, r, log.Error(err))...)
 			p.failedBans.Inc()
@@ -163,7 +163,6 @@ func (p *TaskProcessor) decommissionRPCProxy(
 		p.tryUpdateTaskInStorage(ctx, task)
 	}
 
-	p.l.Info("allowing walle to take banned rpc proxy)", p.rpcProxyLogFields(task, r)...)
 	p.allowRPCProxy(ctx, task, r)
 }
 
@@ -197,7 +196,7 @@ func (p *TaskProcessor) unbanRPCProxy(
 	// 1. Cluster state is fresh and proxy is banned.
 	// 2. Cluster state is stale and thus ban status is stale.
 	if bool(proxy.Banned) || !bool(proxy.Banned) && bannedRecently {
-		p.l.Info("unbanning rpc proxy", p.rpcProxyLogFields(t, r)...)
+		p.l.Debug("unbanning rpc proxy", p.rpcProxyLogFields(t, r)...)
 		if err := p.dc.Unban(ctx, proxy); err != nil {
 			p.l.Error("error unbanning rpc proxy", p.rpcProxyLogFields(t, r, log.Error(err))...)
 			p.failedUnbans.Inc()

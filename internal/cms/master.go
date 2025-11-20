@@ -30,7 +30,7 @@ type StartrekClient interface {
 
 func (p *TaskProcessor) processMaster(ctx context.Context, r *models.Master) {
 	task := ctx.Value(taskKey).(*models.Task)
-	p.l.Info("processing master", p.masterLogFields(task, r)...)
+	p.l.Debug("processing master", p.masterLogFields(task, r)...)
 
 	if task.DeletionRequested {
 		p.l.Info("walle deleted task -> setting master role as finished", p.masterLogFields(task, r)...)
@@ -78,24 +78,24 @@ func (p *TaskProcessor) processPendingMaster(ctx context.Context, task *models.T
 
 func (p *TaskProcessor) processFollower(ctx context.Context, task *models.Task, r *models.Master) {
 	if !p.conf.EnableFollowerProcessing {
-		p.l.Info("follower processing disabled", p.masterLogFields(task, r)...)
+		p.l.Debug("follower processing disabled", p.masterLogFields(task, r)...)
 		return
 	}
 
 	f, ok := p.getPendingFollower(ctx, task, r)
 	if !ok {
-		p.l.Info("no followers to process", p.masterLogFields(task, r)...)
+		p.l.Debug("no followers to process", p.masterLogFields(task, r)...)
 		return
 	}
 
 	if f != r.Addr.String() {
-		p.l.Info("skipping follower in favor of another",
+		p.l.Debug("skipping follower in favor of another",
 			p.masterLogFields(task, r, log.String("pending_follower", f))...)
 		return
 	}
 
 	if !p.checkCellHealth(ctx, task, r) {
-		p.l.Info("skipping master processing", p.masterLogFields(task, r)...)
+		p.l.Debug("skipping master processing", p.masterLogFields(task, r)...)
 		return
 	}
 
@@ -112,11 +112,9 @@ func (p *TaskProcessor) processFollower(ctx context.Context, task *models.Task, 
 
 func (p *TaskProcessor) createTicket(ctx context.Context, t *models.Task, r *models.Master) {
 	if r.TicketKey != "" {
-		p.l.Info("startrek ticket already exists", p.masterLogFields(t, r)...)
+		p.l.Debug("startrek ticket already exists", p.masterLogFields(t, r)...)
 		return
 	}
-
-	p.l.Info("creating startrek ticket for master", p.masterLogFields(t, r)...)
 
 	role := ytsys.ClusterRole("master")
 	if c, ok := p.resolveMaster(t, r); ok {
@@ -145,6 +143,8 @@ func (p *TaskProcessor) createTicket(ctx context.Context, t *models.Task, r *mod
 		p.startrekErrors.Inc()
 		return
 	}
+
+	p.l.Info("created startrek ticket for master", p.masterLogFields(t, r, log.Any("ticket_key", key))...)
 
 	r.OnTicketCreated(key)
 	p.tryUpdateTaskInStorage(ctx, t)
@@ -175,7 +175,7 @@ func (p *TaskProcessor) ensureMasterMaintenance(ctx context.Context, task *model
 	}
 
 	if !master.HasMaintenanceAttr() {
-		p.l.Info("starting master maintenance", p.masterLogFields(task, r)...)
+		p.l.Debug("starting master maintenance", p.masterLogFields(task, r)...)
 
 		req := r.MaintenanceRequest
 		if req == nil {
@@ -196,7 +196,7 @@ func (p *TaskProcessor) ensureMasterMaintenance(ctx context.Context, task *model
 }
 
 func (p *TaskProcessor) startProcessingTicket(ctx context.Context, task *models.Task, r *models.Master) {
-	p.l.Info("updating status of the startrek ticket for master", p.masterLogFields(task, r)...)
+	p.l.Debug("updating status of the startrek ticket for master", p.masterLogFields(task, r)...)
 
 	decisionMaker := CMSRobot
 	if task.DecisionMaker != "" {
@@ -209,7 +209,7 @@ func (p *TaskProcessor) startProcessingTicket(ctx context.Context, task *models.
 		return
 	}
 
-	p.l.Info("updated status of the startrek ticket for master", p.masterLogFields(task, r)...)
+	p.l.Debug("updated status of the startrek ticket for master", p.masterLogFields(task, r)...)
 }
 
 func (p *TaskProcessor) activateMaster(ctx context.Context, r *models.Master) {
@@ -222,9 +222,9 @@ func (p *TaskProcessor) activateMaster(ctx context.Context, r *models.Master) {
 	}
 
 	if !p.hasTaskUpgrade(task) {
-		p.l.Info("master has no upgrade tasks", p.masterLogFields(task, r)...)
+		p.l.Debug("master has no upgrade tasks", p.masterLogFields(task, r)...)
 		if !p.checkMasterUp(ctx, task, r) {
-			p.l.Info("waiting for master to become active", p.masterLogFields(task, r)...)
+			p.l.Debug("waiting for master to become active", p.masterLogFields(task, r)...)
 			return
 		}
 	}
@@ -236,7 +236,7 @@ func (p *TaskProcessor) activateMaster(ctx context.Context, r *models.Master) {
 	}
 
 	if hasMaintenanceAttr {
-		p.l.Info("finishing master maintenance", p.masterLogFields(task, r)...)
+		p.l.Debug("finishing master maintenance", p.masterLogFields(task, r)...)
 		if err := p.dc.UnsetMaintenance(ctx, master, r.MaintenanceRequest.GetID()); err != nil {
 			p.l.Error("error finishing master maintenance",
 				p.masterLogFields(task, r, log.Error(err))...)
@@ -260,9 +260,9 @@ func (p *TaskProcessor) activateMaster(ctx context.Context, r *models.Master) {
 func (p *TaskProcessor) checkMasterUp(ctx context.Context, task *models.Task, r *models.Master) bool {
 	s, err := p.dc.GetHydraState(ctx, r.Path)
 	if err != nil {
-		p.l.Info("hydra state unknown", p.masterLogFields(task, r, log.Error(err))...)
+		p.l.Debug("hydra state unknown", p.masterLogFields(task, r, log.Error(err))...)
 	} else {
-		p.l.Info("got hydra state", p.masterLogFields(task, r, log.Any("hydra_state", s))...)
+		p.l.Debug("got hydra state", p.masterLogFields(task, r, log.Any("hydra_state", s))...)
 	}
 
 	if err == nil && (s.State == ytsys.PeerStateFollowing || s.State == ytsys.PeerStateLeading) {
@@ -271,7 +271,7 @@ func (p *TaskProcessor) checkMasterUp(ctx context.Context, task *models.Task, r 
 
 	timeAfterDeletionRequest := time.Since(time.Time(task.DeletionRequestedAt))
 	if timeAfterDeletionRequest < p.conf.MaintenanceAttrRemoveTimeout {
-		p.l.Info("waiting for master to become active", p.masterLogFields(task, r,
+		p.l.Debug("waiting for master to become active", p.masterLogFields(task, r,
 			log.Time("deletion_requested_at", time.Time(task.DeletionRequestedAt)),
 			log.Duration("time_after_deletion_request", timeAfterDeletionRequest),
 			log.Duration("maintenance_attr_remove_timeout", p.conf.MaintenanceAttrRemoveTimeout),
@@ -283,7 +283,7 @@ func (p *TaskProcessor) checkMasterUp(ctx context.Context, task *models.Task, r 
 }
 
 func (p *TaskProcessor) closeTicket(ctx context.Context, task *models.Task, r *models.Master) {
-	p.l.Info("closing startrek ticket for master", p.masterLogFields(task, r)...)
+	p.l.Debug("closing startrek ticket for master", p.masterLogFields(task, r)...)
 
 	if err := p.startrekClient.CloseTicket(ctx, r.TicketKey); err != nil {
 		p.l.Error("startrek ticket closing failed", p.masterLogFields(task, r, log.Error(err))...)
@@ -352,7 +352,7 @@ func (p *TaskProcessor) getPendingFollower(ctx context.Context, task *models.Tas
 	}
 
 	if len(inMaintenance) > 1 {
-		p.l.Info("can not process follower; multiple masters have maintenance attr", p.masterLogFields(task, r,
+		p.l.Debug("can not process follower; multiple masters have maintenance attr", p.masterLogFields(task, r,
 			log.String("first_master_addr", inMaintenance[0].GetAddr().String()),
 			log.String("second_master_addr", inMaintenance[1].GetAddr().String()),
 		)...)
@@ -411,7 +411,7 @@ func (p *TaskProcessor) checkCellHealth(ctx context.Context, task *models.Task, 
 	}
 
 	if leader.HasMaintenanceAttr() {
-		p.l.Info("can not process follower; leader has maintenance attr", p.masterLogFields(task, r,
+		p.l.Debug("can not process follower; leader has maintenance attr", p.masterLogFields(task, r,
 			log.String("master_addr", leader.GetAddr().String()),
 		)...)
 		return false
@@ -428,14 +428,14 @@ func (p *TaskProcessor) checkCellHealth(ctx context.Context, task *models.Task, 
 		}
 
 		if m.HasMaintenanceAttr() {
-			p.l.Info("can not process follower; other master has maintenance attr", p.masterLogFields(task, r,
+			p.l.Debug("can not process follower; other master has maintenance attr", p.masterLogFields(task, r,
 				log.String("master_addr", m.GetAddr().String()),
 			)...)
 			return false
 		}
 
 		if ok, err := p.dc.HasMaintenanceAttr(ctx, m); err != nil || ok {
-			p.l.Info("can not process follower; other master has maintenance attr", p.masterLogFields(task, r,
+			p.l.Debug("can not process follower; other master has maintenance attr", p.masterLogFields(task, r,
 				log.String("master_addr", m.GetAddr().String()),
 			)...)
 			return false
@@ -450,13 +450,13 @@ func (p *TaskProcessor) checkCellHealth(ctx context.Context, task *models.Task, 
 		}
 
 		if s.ReadOnly {
-			p.l.Info("can not process follower; other master is in read_only state",
+			p.l.Debug("can not process follower; other master is in read_only state",
 				p.masterLogFields(task, r, log.String("master_addr", m.GetAddr().String()))...)
 			return false
 		}
 
 		if s.State != ytsys.PeerStateFollowing {
-			p.l.Info("can not process follower; other master is in a bad state",
+			p.l.Debug("can not process follower; other master is in a bad state",
 				p.masterLogFields(task, r,
 					log.String("master_addr", m.GetAddr().String()),
 					log.String("state", string(s.State)))...)
@@ -494,7 +494,7 @@ func (p *TaskProcessor) resolveMasterCell(
 		s, err := p.dc.GetHydraState(ctx, m.GetCypressPath())
 		if err != nil {
 			if m.GetCypressPath().String() != r.Path.String() {
-				p.l.Error("hydra state unknown", p.masterLogFields(task, r,
+				p.l.Debug("hydra state unknown", p.masterLogFields(task, r,
 					log.String("master_addr", m.GetCypressPath().String()),
 					log.Error(err))...)
 				return nil, nil, xerrors.Errorf("hydra state for %q is unknown: %w", m.GetCypressPath().String(), err)

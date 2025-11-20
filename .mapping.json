@@ -5,6 +5,7 @@
   "CODE_OF_CONDUCT.md":"yt/opensource/repos/ytsaurus-cms/github_toplevel/CODE_OF_CONDUCT.md",
   "CONTRIBUTING.md":"yt/opensource/repos/ytsaurus-cms/github_toplevel/CONTRIBUTING.md",
   "LICENSE":"yt/opensource/repos/ytsaurus-cms/github_toplevel/LICENSE",
+  "cmd/cms/logger.go":"yt/admin/cms/cmd/cms/logger.go",
   "cmd/cms/main.go":"yt/admin/cms/cmd/cms/main.go",
   "cmd/cms/maxprocs.go":"yt/admin/cms/cmd/cms/maxprocs.go",
   "cmd/migrate/main.go":"yt/admin/cms/cmd/migrate/main.go",

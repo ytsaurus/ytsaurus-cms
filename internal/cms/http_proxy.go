@@ -16,7 +16,7 @@ var httpProxyKey httpProxyKeyType
 
 func (p *TaskProcessor) processHTTPProxy(ctx context.Context, r *models.HTTPProxy) {
 	task := ctx.Value(taskKey).(*models.Task)
-	p.l.Info("processing http proxy", p.httpProxyLogFields(task, r)...)
+	p.l.Debug("processing http proxy", p.httpProxyLogFields(task, r)...)
 
 	proxy, ok := p.resolveHTTPProxy(task, r)
 	if !ok {
@@ -66,10 +66,10 @@ func (p *TaskProcessor) processPendingHTTPProxy(
 
 	p.httpProxyRoleLimits.Reload()
 	if p.httpProxyRoleLimits.Ban(proxy) {
-		p.l.Info("rate limits allow http proxy decommission", p.httpProxyLogFields(task, r)...)
+		p.l.Debug("rate limits allow http proxy decommission", p.httpProxyLogFields(task, r)...)
 		p.decommissionHTTPProxy(ctx, task, proxy, r)
 	} else {
-		p.l.Info("rate limits forbid http proxy decommission", p.httpProxyLogFields(task, r)...)
+		p.l.Debug("rate limits forbid http proxy decommission", p.httpProxyLogFields(task, r)...)
 	}
 }
 
@@ -81,7 +81,7 @@ func (p *TaskProcessor) decommissionHTTPProxy(
 	r *models.HTTPProxy,
 ) {
 	if !proxy.Banned {
-		p.l.Info("banning http proxy", p.httpProxyLogFields(task, r)...)
+		p.l.Debug("banning http proxy", p.httpProxyLogFields(task, r)...)
 		if err := p.dc.Ban(ctx, proxy, p.makeBanMessage(task)); err != nil {
 			p.l.Error("error banning http proxy", p.httpProxyLogFields(task, r, log.Error(err))...)
 			p.failedBans.Inc()
@@ -93,7 +93,6 @@ func (p *TaskProcessor) decommissionHTTPProxy(
 		p.tryUpdateTaskInStorage(ctx, task)
 	}
 
-	p.l.Info("allowing walle to take banned http proxy)", p.httpProxyLogFields(task, r)...)
 	p.allowHTTPProxy(ctx, task, r)
 }
 
@@ -123,7 +122,7 @@ func (p *TaskProcessor) unbanHTTPProxy(
 	// 1. Cluster state is fresh and proxy is banned.
 	// 2. Cluster state is stale and thus ban status is stale.
 	if bool(proxy.Banned) || !bool(proxy.Banned) && bannedRecently {
-		p.l.Info("unbanning http proxy", p.httpProxyLogFields(task, r)...)
+		p.l.Debug("unbanning http proxy", p.httpProxyLogFields(task, r)...)
 		if err := p.dc.Unban(ctx, proxy); err != nil {
 			p.l.Error("error unbanning http proxy", p.httpProxyLogFields(task, r, log.Error(err))...)
 			p.failedUnbans.Inc()

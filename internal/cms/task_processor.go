@@ -421,7 +421,7 @@ func (p *TaskProcessor) initRateLimiter(tasks []*models.Task) {
 		}
 	}
 
-	p.l.Info("setting non-GPU rate limits", log.Any("config", p.conf.RateLimits), log.Int("active_host_count", activeHostCount))
+	p.l.Debug("setting non-GPU rate limits", log.Any("config", p.conf.RateLimits), log.Int("active_host_count", activeHostCount))
 	p.rateLimiter = NewRateLimiter(&p.conf.RateLimits, activeHostCount)
 }
 
@@ -437,7 +437,7 @@ func (p *TaskProcessor) initGPURateLimiter(tasks []*models.Task) {
 		}
 	}
 
-	p.l.Info("setting GPU rate limits", log.Any("config", p.conf.GPURateLimits), log.Int("active_host_count", activeHostCount))
+	p.l.Debug("setting GPU rate limits", log.Any("config", p.conf.GPURateLimits), log.Int("active_host_count", activeHostCount))
 	p.gpuRateLimiter = NewRateLimiter(&p.conf.GPURateLimits, activeHostCount)
 }
 
@@ -462,7 +462,7 @@ func (p *TaskProcessor) initLastNodeBanTime(tasks []*models.Task) {
 	}
 
 	p.nodeBanLimiter.LastBanTime = lastBanTime
-	p.l.Info("setting last node ban time",
+	p.l.Debug("setting last node ban time",
 		log.Time("last_node_ban_time", lastBanTime),
 		log.String("last_banned_node_group", p.lastBannedNodeGroup))
 }
@@ -617,20 +617,20 @@ func (p *TaskProcessor) run(ctx context.Context) error {
 			return ctx.Err()
 		case <-integrityCheckTicker.C:
 			if err := p.checkChunkIntegrity(ctx); err != nil {
-				p.l.Error("chunk integrity check failed", log.Error(err))
+				p.l.Debug("chunk integrity check failed", log.Error(err))
 				p.chunkIntegrityCheckErrors.Inc()
 			} else {
-				p.l.Info("chunk integrity check passed")
+				p.l.Debug("chunk integrity check passed")
 			}
 		case <-taskPollTicker.C:
 			if err := p.cluster.Err(); err != nil {
-				p.l.Info("last cluster poll failed; limiting tasks processing", log.Error(err))
+				p.l.Debug("last cluster poll failed; limiting tasks processing", log.Error(err))
 			}
 			if err := p.updateTasks(ctx); err != nil {
 				p.l.Error("tasks update failed", log.Error(err))
 				p.failedTaskUpdateLoops.Inc()
 			} else {
-				p.l.Info("tasks update succeeded")
+				p.l.Debug("tasks update succeeded")
 			}
 		}
 	}
@@ -646,12 +646,12 @@ func (p *TaskProcessor) runHostAnnotator(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-t.C:
-			p.l.Info("reloading host annotations")
+			p.l.Debug("reloading host annotations")
 			if err := p.hostAnnotations.Reload(ctx); err != nil {
 				p.l.Error("host annotations reload failed", log.Error(err))
 				p.hostAnnotationsReloadErrors.Inc()
 			} else {
-				p.l.Info("host annotations reloaded")
+				p.l.Debug("host annotations reloaded")
 			}
 		}
 	}
@@ -668,30 +668,30 @@ func (p *TaskProcessor) checkChunkIntegrity(ctx context.Context) error {
 		p.chunkIntegrity = nil
 		return err
 	}
-	p.l.Info("successfully queried chunk integrity indicators", log.String("indicators", i.String()))
+	p.l.Debug("successfully queried chunk integrity indicators", log.String("indicators", i.String()))
 	p.chunkIntegrity = i
 
 	if i.LVC > 0 || i.QMC > 0 {
-		p.l.Info("LVC > 0 or QMC > 0 -> unbanning nodes", log.Int64("lvc", i.LVC), log.Int64("qmc", i.QMC))
+		p.l.Debug("LVC > 0 or QMC > 0 -> unbanning nodes", log.Int64("lvc", i.LVC), log.Int64("qmc", i.QMC))
 		if err := p.unbanNodesBecauseOfLVC(ctx); err != nil {
 			p.l.Error("error unbanning nodes", log.Error(err))
 		}
 	} else {
-		p.l.Info("LVC is 0")
+		p.l.Debug("LVC is 0")
 	}
 
 	if !i.Check(p.Conf().MaxURC) {
-		p.l.Info("chunk integrity is broken", log.String("indicators", i.String()))
+		p.l.Debug("chunk integrity is broken", log.String("indicators", i.String()))
 		return xerrors.Errorf("chunk integrity broken: %s", i.String())
 	}
-	p.l.Info("chunk integrity is intact", log.String("indicators", i.String()))
+	p.l.Debug("chunk integrity is intact", log.String("indicators", i.String()))
 
 	return nil
 }
 
 // updateTasks loads active tasks from storage, processes them and writes updated ones back.
 func (p *TaskProcessor) updateTasks(ctx context.Context) error {
-	p.l.Info("updating tasks")
+	p.l.Debug("updating tasks")
 
 	start := time.Now()
 	defer p.taskProcessingLoop.RecordDuration(time.Since(start))
@@ -702,7 +702,7 @@ func (p *TaskProcessor) updateTasks(ctx context.Context) error {
 		p.storageErrors.Inc()
 		return err
 	}
-	p.l.Info("retrieved tasks from storage", log.Int("count", len(tasks)))
+	p.l.Debug("retrieved tasks from storage", log.Int("count", len(tasks)))
 	p.logClusterState(tasks)
 
 	p.resetLoopMetrics()
@@ -867,12 +867,12 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 	addTasks(requestedManualConfirmation...)
 
 	if err := p.cluster.Err(); err != nil {
-		p.l.Info("cluster is in a broken state; processing only manual confirmation requests", log.Error(err))
+		p.l.Error("cluster is in a broken state; processing only manual confirmation requests", log.Error(err))
 		return ret
 	}
 
 	if p.chunkIntegrity == nil {
-		p.l.Info("chunk integrity state is unknown; processing only manual confirmation requests")
+		p.l.Error("chunk integrity state is unknown; processing only manual confirmation requests")
 		return ret
 	}
 
@@ -880,7 +880,7 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 	addTasks(withoutChunks...)
 
 	if p.chunkIntegrity.LVC > 0 || p.chunkIntegrity.QMC > 0 {
-		p.l.Info("LVC > 0 and/or QMC > 0; processing only nodes without chunks, " +
+		p.l.Error("LVC > 0 and/or QMC > 0; processing only nodes without chunks, " +
 			"returned nodes and unprocessed manual confirmation requests")
 		return ret
 	}
@@ -892,11 +892,11 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 	for i, g := range groups {
 		id := g.GetGroupID()
 		if i+1 > p.conf.MaxParallelGroupTasks {
-			p.l.Info("skipping task group due to rate limit", log.String("group_id", id),
+			p.l.Debug("skipping task group due to rate limit", log.String("group_id", id),
 				log.Int("max_parallel_group_tasks", p.conf.MaxParallelGroupTasks))
 			continue
 		}
-		p.l.Info("adding task group to processing", log.String("group_id", id))
+		p.l.Debug("adding task group to processing", log.String("group_id", id))
 
 		scenarioInfo := g.GetScenarioInfo()
 		for _, t := range g {
@@ -910,7 +910,7 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 					continue
 				}
 			}
-			p.l.Info("adding group task to processing", log.Any("task", t),
+			p.l.Debug("adding group task to processing", log.Any("task", t),
 				log.String("group_id", id))
 			addTasks(t)
 		}
@@ -940,13 +940,13 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 		}
 
 		if !t.ConfirmationRequested && len(hostsByTaskType)+newHostCount > limiter.Config.MaxParallelHosts {
-			p.l.Info("skipping new task due to rate limit", log.Any("task", t),
+			p.l.Debug("skipping new task due to rate limit", log.Any("task", t),
 				log.Int("max_parallel_hosts", limiter.Config.MaxParallelHosts))
 			return
 		}
 
 		if !p.conf.Schedule.Allow(t, time.Now()) {
-			p.l.Info("skipping new task due to schedule restrictions",
+			p.l.Debug("skipping new task due to schedule restrictions",
 				log.Any("task", t),
 				log.Any("schedule_config", p.conf.Schedule))
 			return
@@ -956,7 +956,7 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 		reserve := limiter.ReserveN(start, newHostCount)
 
 		if !t.ConfirmationRequested && (!reserve.OK() || reserve.Delay() != 0) {
-			p.l.Info("skipping new task due to rate limit", log.Any("task", t),
+			p.l.Debug("skipping new task due to rate limit", log.Any("task", t),
 				log.Duration("wait_time", reserve.Delay()))
 			reserve.CancelAt(start)
 			return
@@ -985,11 +985,11 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 	}
 
 	if err := p.missingChunksThrottler.Allow(); err != nil {
-		p.l.Info("throttling task processing due to missing part chunks", log.Error(err))
+		p.l.Debug("throttling task processing due to missing part chunks", log.Error(err))
 		return ret
 	}
 
-	p.l.Info("chunk integrity", log.String("indicators", p.chunkIntegrity.String()))
+	p.l.Debug("chunk integrity", log.String("indicators", p.chunkIntegrity.String()))
 	addTasks(other...)
 
 	return ret
@@ -1084,11 +1084,11 @@ func (p *TaskProcessor) taskConsistsOfNodesWithFewChunks(t *models.Task, maxChun
 func (p *TaskProcessor) addNewTaskToProcessing(ctx context.Context, t *models.Task) error {
 	t.ProcessingState = models.StatePending
 	if err := p.storage.Update(ctx, t); err != nil {
-		p.l.Info("error adding new task to processing", log.Any("task", t), log.Error(err))
+		p.l.Error("error adding new task to processing", log.Any("task", t), log.Error(err))
 		p.storageErrors.Inc()
 		return err
 	}
-	p.l.Info("new task proceeded to processing", log.Any("task", t))
+	p.l.Debug("new task proceeded to processing", log.Any("task", t))
 	return nil
 }
 
@@ -1097,16 +1097,16 @@ func (p *TaskProcessor) addTaskToGroup(ctx context.Context, t *models.Task, i *w
 	t.IsGroupTask = true
 	t.ScenarioInfo = i
 	if err := p.storage.Update(ctx, t); err != nil {
-		p.l.Info("error adding task to group", log.Any("task", t), log.Error(err))
+		p.l.Error("error adding task to group", log.Any("task", t), log.Error(err))
 		p.storageErrors.Inc()
 		return err
 	}
-	p.l.Info("task was added to group", log.Any("task", t))
+	p.l.Debug("task was added to group", log.Any("task", t))
 	return nil
 }
 
 func (p *TaskProcessor) processConfirmationRequests(ctx context.Context, tasks []*models.Task) {
-	p.l.Info("processing manual confirmation requests")
+	p.l.Debug("processing manual confirmation requests")
 
 	for _, t := range tasks {
 		if !t.ConfirmationRequested {
@@ -1116,7 +1116,7 @@ func (p *TaskProcessor) processConfirmationRequests(ctx context.Context, tasks [
 			p.l.Error("manual confirmation failed", log.Error(err))
 			p.manualConfirmationErrors.Inc()
 		} else {
-			p.l.Info("manual confirmation done", log.Any("task", t))
+			p.l.Debug("manual confirmation done", log.Any("task", t))
 		}
 	}
 }
@@ -1124,17 +1124,17 @@ func (p *TaskProcessor) processConfirmationRequests(ctx context.Context, tasks [
 // doManualConfirmation performs actual confirmation that updates task status in storage.
 func (p *TaskProcessor) doManualConfirmation(ctx context.Context, task *models.Task) error {
 	if task.ProcessingState == models.StateConfirmedManually && task.WalleStatus == walle.StatusOK {
-		p.l.Info("task is already confirmed", log.String("task_id", string(task.ID)))
+		p.l.Debug("task is already confirmed", log.String("task_id", string(task.ID)))
 		return nil
 	}
 
-	p.l.Info("performing manual task confirmation", log.Any("task", task))
+	p.l.Debug("performing manual task confirmation", log.Any("task", task))
 	task.ConfirmManually(models.DecisionMaker(task.ConfirmationRequestedBy))
 	if err := p.storage.Update(ctx, task); err != nil {
 		return err
 	}
 
-	p.l.Info("editing status of related tickets", log.Any("task", task))
+	p.l.Debug("editing status of related tickets", log.Any("task", task))
 	for _, m := range task.GetMasters() {
 		p.ensureMasterMaintenance(ctx, task, m)
 		p.startProcessingTicket(ctx, task, m)
@@ -1149,7 +1149,7 @@ type taskKeyType int
 var taskKey taskKeyType
 
 func (p *TaskProcessor) processTask(ctx context.Context, t *models.Task) {
-	p.l.Info("processing task", log.Any("task", t))
+	p.l.Debug("processing task", log.Any("task", t))
 
 	// Check that latest cluster state update was after the task was created.
 	clusterReloadTime := p.cluster.LastReloadTime()
@@ -1161,7 +1161,7 @@ func (p *TaskProcessor) processTask(ctx context.Context, t *models.Task) {
 			log.Error(p.cluster.Err()))
 		return
 	}
-	p.l.Info("task was created before last successful cluster state update -> proceeding to precessing",
+	p.l.Debug("task was created before last successful cluster state update -> proceeding to precessing",
 		log.String("task_id", string(t.ID)))
 
 	taskCtx := context.WithValue(ctx, taskKey, t)
@@ -1174,33 +1174,51 @@ func (p *TaskProcessor) processTask(ctx context.Context, t *models.Task) {
 		p.tryUpdateTaskInStorage(ctx, t)
 	}
 
+	if t.ProcessingState == models.StateFinished {
+		return
+	}
+
 	// Update task state in storage.
 	if t.AllHostsFinished() {
 		t.SetFinished()
-		p.l.Info("all task hosts finished", log.Any("task", t))
+		for _, host := range t.Hosts {
+			p.l.Info("all task hosts finished", log.Any("task", t), log.String("host", host))
+		}
 		p.taskProcessingDuration.RecordDuration(time.Time(t.UpdatedAt).Sub(time.Time(t.CreatedAt)))
 		p.tryUpdateTaskInStorage(ctx, t)
 		return
 	} else {
-		p.l.Info("not all task hosts are finished", log.String("task_id", string(t.ID)))
+		p.l.Debug("not all task hosts are finished", log.Any("task", t))
+	}
+
+	if t.ProcessingState == models.StateProcessed {
+		return
 	}
 
 	// Update task state in storage.
 	if t.AllHostsProcessed() {
 		t.SetProcessed()
-		p.l.Info("all task hosts processed", log.Any("task", t))
+		for _, host := range t.Hosts {
+			p.l.Info("all task hosts processed", log.Any("task", t), log.String("host", host))
+		}
 		p.tryUpdateTaskInStorage(ctx, t)
 		return
 	} else {
-		p.l.Info("not all task hosts are processed", log.String("task_id", string(t.ID)))
+		p.l.Debug("not all task hosts are processed", log.Any("task", t))
+	}
+
+	if t.ProcessingState == models.StateDecommissioned {
+		return
 	}
 
 	if t.AllHostsDecommissioned() {
 		t.SetDecommissioned()
-		p.l.Info("all task hosts decommissioned", log.Any("task", t))
+		for _, host := range t.Hosts {
+			p.l.Info("all task hosts decommissioned", log.Any("task", t), log.String("host", host))
+		}
 		p.tryUpdateTaskInStorage(ctx, t)
 	} else {
-		p.l.Info("not all task hosts are decommissioned", log.String("task_id", string(t.ID)))
+		p.l.Debug("not all task hosts are decommissioned", log.Any("task", t))
 	}
 }
 
@@ -1212,7 +1230,7 @@ var hostKey hostKeyType
 func (p *TaskProcessor) processHost(ctx context.Context, h *models.Host) {
 	task := ctx.Value(taskKey).(*models.Task)
 
-	p.l.Info("processing host", log.Any("host", h))
+	p.l.Debug("processing host", log.Any("host", h))
 
 	p.updateRoles(ctx, task, h)
 	p.annotateHost(ctx, task, h)
@@ -1228,19 +1246,27 @@ func (p *TaskProcessor) processHost(ctx context.Context, h *models.Host) {
 		p.processRole(hostCtx, r)
 	}
 
+	if h.State == models.HostStateFinished {
+		return
+	}
+
 	// Update host state in storage.
 	if h.AllRolesFinished() {
 		h.SetFinished()
 
 		p.l.Info("all host roles finished",
-			log.String("task_id", string(task.ID)), log.Any("host", h))
+			log.Any("task", task), log.Any("host", h))
 
 		task := ctx.Value(taskKey).(*models.Task)
 		p.tryUpdateTaskInStorage(ctx, task)
 		return
 	} else {
-		p.l.Info("not all host roles are finished",
-			log.String("task_id", string(task.ID)), log.String("host", h.Host))
+		p.l.Debug("not all host roles are finished",
+			log.Any("task", task), log.Any("host", h))
+	}
+
+	if h.State == models.HostStateProcessed {
+		return
 	}
 
 	// Update host state in storage.
@@ -1248,14 +1274,18 @@ func (p *TaskProcessor) processHost(ctx context.Context, h *models.Host) {
 		h.SetProcessed()
 
 		p.l.Info("all host roles processed",
-			log.String("task_id", string(task.ID)), log.Any("host", h))
+			log.Any("task", task), log.Any("host", h))
 
 		task := ctx.Value(taskKey).(*models.Task)
 		p.tryUpdateTaskInStorage(ctx, task)
 		return
 	} else {
-		p.l.Info("not all host roles are processed",
-			log.String("task_id", string(task.ID)), log.String("host", h.Host))
+		p.l.Debug("not all host roles are processed",
+			log.Any("task", task), log.Any("host", h))
+	}
+
+	if h.State == models.HostStateDecommissioned {
+		return
 	}
 
 	// Update host state in storage.
@@ -1263,13 +1293,13 @@ func (p *TaskProcessor) processHost(ctx context.Context, h *models.Host) {
 		h.SetDecommissioned()
 
 		p.l.Info("all host roles decommissioned",
-			log.String("task_id", string(task.ID)), log.Any("host", h))
+			log.Any("task", task), log.Any("host", h))
 
 		task := ctx.Value(taskKey).(*models.Task)
 		p.tryUpdateTaskInStorage(ctx, task)
 	} else {
-		p.l.Info("not all host roles are decommissioned",
-			log.String("task_id", string(task.ID)), log.String("host", h.Host))
+		p.l.Debug("not all host roles are decommissioned",
+			log.Any("task", task), log.Any("host", h))
 	}
 }
 
@@ -1278,7 +1308,7 @@ func (p *TaskProcessor) preprocessHost(ctx context.Context, t *models.Task, h *m
 
 	components, ok := p.cluster.GetHostComponents(h.Host)
 	if !ok {
-		p.l.Info("no cluster components found", log.String("host", h.Host))
+		p.l.Debug("no cluster components found", log.String("host", h.Host))
 		return
 	}
 
@@ -1311,7 +1341,7 @@ func (p *TaskProcessor) preprocessHost(ctx context.Context, t *models.Task, h *m
 func (p *TaskProcessor) updateRoles(ctx context.Context, t *models.Task, h *models.Host) {
 	hostComponents, ok := p.cluster.GetHostComponents(h.Host)
 	if !ok {
-		p.l.Info("no cluster components found", log.String("host", h.Host))
+		p.l.Debug("no cluster components found", log.String("host", h.Host))
 		return
 	}
 
@@ -1335,10 +1365,10 @@ func (p *TaskProcessor) updateRoles(ctx context.Context, t *models.Task, h *mode
 	}
 
 	if changed := h.UpdateRoles(hostComponents); changed {
-		p.l.Info("host component set changed", log.Any("host", h))
+		p.l.Debug("host component set changed", log.Any("host", h))
 		p.tryUpdateTaskInStorage(ctx, t)
 	} else {
-		p.l.Info("host component set not changed", log.String("host", h.Host))
+		p.l.Debug("host component set not changed", log.String("host", h.Host))
 	}
 }
 
@@ -1348,21 +1378,21 @@ func (p *TaskProcessor) annotateHost(ctx context.Context, t *models.Task, h *mod
 		return
 	}
 	if added := h.AddTicket(startrek.TicketKey(info.Ticket)); added {
-		p.l.Info("host ticket set changed", log.Any("host", h))
+		p.l.Debug("host ticket set changed", log.Any("host", h))
 		p.tryUpdateTaskInStorage(ctx, t)
 	} else {
-		p.l.Info("host ticket set not changed", log.String("host", h.Host))
+		p.l.Debug("host ticket set not changed", log.String("host", h.Host))
 	}
 }
 
 func (p *TaskProcessor) processNotYTHost(ctx context.Context, h *models.Host) {
 	task := ctx.Value(taskKey).(*models.Task)
 
-	p.l.Info("processing non-YT host", log.String("task_id", string(task.ID)), log.Any("host", h))
+	p.l.Debug("processing non-YT host", log.String("task_id", string(task.ID)), log.Any("host", h))
 
 	if task.DeletionRequested {
 		h.SetFinished()
-		p.l.Info("finishing processing of non-YT host", log.String("host", h.Host))
+		p.l.Debug("finishing processing of non-YT host", log.String("host", h.Host))
 		p.tryUpdateTaskInStorage(ctx, task)
 		return
 	}
@@ -1372,12 +1402,12 @@ func (p *TaskProcessor) processNotYTHost(ctx context.Context, h *models.Host) {
 	}
 
 	if !p.colocationLimits.Allow(ctx, h) {
-		p.l.Info("can not allow non-YT host due to rate limit",
+		p.l.Debug("can not allow non-YT host due to rate limit",
 			log.String("task_id", string(task.ID)), log.Any("host", h))
 		return
 	}
 
-	p.l.Info("allowing walle to take non-YT host", log.String("host", h.Host))
+	p.l.Debug("allowing walle to take non-YT host", log.String("host", h.Host))
 
 	h.AllowAsForeign()
 	p.tryUpdateTaskInStorage(ctx, task)
@@ -1394,7 +1424,7 @@ func (p *TaskProcessor) updateTaskInStorage(ctx context.Context, task *models.Ta
 		p.storageErrors.Inc()
 		return err
 	}
-	p.l.Info("successfully updated task in storage", log.Any("task", task))
+	p.l.Debug("successfully updated task in storage", log.Any("task", task))
 	return nil
 }
 
@@ -1419,7 +1449,7 @@ func (p *TaskProcessor) processRole(ctx context.Context, c *models.Component) {
 
 func (p *TaskProcessor) logClusterState(tasks []*models.Task) {
 	for _, t := range tasks {
-		p.l.Info("cms task state", log.Any("task", t.GetClusterInfo(p.cluster)))
+		p.l.Debug("cms task state", log.Any("task", t.GetClusterInfo(p.cluster)))
 	}
 }
 
