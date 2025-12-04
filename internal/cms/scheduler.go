@@ -10,10 +10,10 @@ import (
 
 func (p *TaskProcessor) processScheduler(ctx context.Context, r *models.Scheduler) {
 	task := ctx.Value(taskKey).(*models.Task)
-	p.l.Info("processing scheduler", p.schedulerLogFields(task, r)...)
+	p.l.Debug("processing scheduler", p.schedulerLogFields(task, r)...)
 
 	if task.DeletionRequested {
-		p.l.Info("deletion requested -> activating scheduler", p.schedulerLogFields(task, r)...)
+		p.l.Debug("deletion requested -> activating scheduler", p.schedulerLogFields(task, r)...)
 		p.activateScheduler(ctx, r)
 		return
 	}
@@ -36,7 +36,7 @@ func (p *TaskProcessor) processPendingScheduler(ctx context.Context, r *models.S
 	}
 
 	if p.taskCache.Schedulers.CountProcessed() != 0 {
-		p.l.Info("cannot allow scheduler as another one is in process", p.schedulerLogFields(task, r)...)
+		p.l.Debug("cannot allow scheduler as another one is in process", p.schedulerLogFields(task, r)...)
 		return
 	}
 
@@ -49,7 +49,7 @@ func (p *TaskProcessor) processPendingScheduler(ctx context.Context, r *models.S
 	var connected []string
 	for _, s := range schedulers {
 		if err := s.ConnectionRequestError; err != nil && s.Addr.String() != scheduler.Addr.String() {
-			p.l.Info("cannot allow scheduler as connection state of another one is unknown",
+			p.l.Debug("cannot allow scheduler as connection state of another one is unknown",
 				p.schedulerLogFields(task, r, log.Error(err))...)
 			return
 		}
@@ -59,19 +59,19 @@ func (p *TaskProcessor) processPendingScheduler(ctx context.Context, r *models.S
 	}
 
 	if len(connected) > 1 {
-		p.l.Info("cannot allow scheduler as there are many connected schedulers",
+		p.l.Debug("cannot allow scheduler as there are many connected schedulers",
 			p.schedulerLogFields(task, r, log.Strings("connected", connected))...)
 		return
 	}
 
 	if len(connected) == 0 {
-		p.l.Info("cannot allow scheduler as there are no connected schedulers",
+		p.l.Debug("cannot allow scheduler as there are no connected schedulers",
 			p.schedulerLogFields(task, r)...)
 		return
 	}
 
 	if len(schedulers) < 2 {
-		p.l.Info("cannot allow scheduler as there are not that many left",
+		p.l.Debug("cannot allow scheduler as there are not that many left",
 			p.schedulerLogFields(task, r, log.Int("left_count", len(schedulers)))...)
 		return
 	}
@@ -109,7 +109,7 @@ func (p *TaskProcessor) decommissionScheduler(ctx context.Context, r *models.Sch
 		p.tryUpdateTaskInStorage(ctx, task)
 	}
 
-	p.l.Info("allowing walle to take scheduler)", p.schedulerLogFields(task, r)...)
+	p.l.Info("allowing walle to take scheduler", p.schedulerLogFields(task, r)...)
 	r.AllowWalle()
 	p.tryUpdateTaskInStorage(ctx, task)
 }
@@ -124,7 +124,6 @@ func (p *TaskProcessor) activateScheduler(ctx context.Context, r *models.Schedul
 	}
 
 	if scheduler.InMaintenance {
-		p.l.Info("finishing scheduler maintenance", p.schedulerLogFields(task, r)...)
 		if err := p.dc.UnsetMaintenance(ctx, scheduler, r.MaintenanceRequest.GetID()); err != nil {
 			p.l.Error("error finishing scheduler maintenance",
 				p.schedulerLogFields(task, r, log.Error(err))...)
@@ -135,14 +134,16 @@ func (p *TaskProcessor) activateScheduler(ctx context.Context, r *models.Schedul
 	}
 
 	if r.InMaintenance {
-		p.l.Info("finishing scheduler maintenance", p.schedulerLogFields(task, r)...)
+		p.l.Info("scheduler maintenance finished in storage", p.schedulerLogFields(task, r)...)
 		r.FinishMaintenance()
 		p.tryUpdateTaskInStorage(ctx, task)
 	}
 
-	p.l.Info("finish processing scheduler", p.schedulerLogFields(task, r)...)
-	r.SetFinished()
-	p.tryUpdateTaskInStorage(ctx, task)
+	if r.State != models.SchedulerStateFinished {
+		p.l.Info("finish processing scheduler", p.schedulerLogFields(task, r)...)
+		r.SetFinished()
+		p.tryUpdateTaskInStorage(ctx, task)
+	}
 }
 
 func (p *TaskProcessor) resolveScheduler(t *models.Task, r *models.Scheduler) (*ytsys.Scheduler, bool) {

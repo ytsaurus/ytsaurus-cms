@@ -21,7 +21,7 @@ func (p *TaskProcessor) processHTTPProxy(ctx context.Context, r *models.HTTPProx
 	proxy, ok := p.resolveHTTPProxy(task, r)
 	if !ok {
 		// HTTP proxy of deleted task was already removed from cypress.
-		if p.cluster.Err() == nil && task.DeletionRequested && p.CheckPathMissing(ctx, r.Path) {
+		if p.cluster.Err() == nil && task.DeletionRequested && p.CheckPathMissing(ctx, r.Path) && r.State != models.HTTPProxyStateFinished {
 			p.l.Info("finish processing deleted http proxy", p.httpProxyLogFields(task, r)...)
 			r.SetFinished()
 			p.tryUpdateTaskInStorage(ctx, task)
@@ -31,7 +31,7 @@ func (p *TaskProcessor) processHTTPProxy(ctx context.Context, r *models.HTTPProx
 	proxyCtx := context.WithValue(ctx, httpProxyKey, proxy)
 
 	if task.DeletionRequested {
-		p.l.Info("deletion requested -> activating http proxy", p.httpProxyLogFields(task, r)...)
+		p.l.Debug("deletion requested -> activating http proxy", p.httpProxyLogFields(task, r)...)
 		p.activateHTTPProxy(proxyCtx, task, proxy, r)
 		return
 	}
@@ -132,7 +132,7 @@ func (p *TaskProcessor) unbanHTTPProxy(
 	}
 
 	if r.Banned {
-		p.l.Info("unbanning http proxy role", p.httpProxyLogFields(task, r)...)
+		p.l.Info("http proxy unbanned in storage", p.httpProxyLogFields(task, r)...)
 		r.Unban()
 		p.tryUpdateTaskInStorage(ctx, task)
 	}

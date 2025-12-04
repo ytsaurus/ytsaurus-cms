@@ -1191,7 +1191,8 @@ func (p *TaskProcessor) processTask(ctx context.Context, t *models.Task) {
 		p.l.Debug("not all task hosts are finished", log.Any("task", t))
 	}
 
-	if t.ProcessingState == models.StateProcessed {
+	if t.ProcessingState == models.StateProcessed ||
+		t.ProcessingState == models.StateConfirmedManually {
 		return
 	}
 

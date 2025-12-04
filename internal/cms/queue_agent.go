@@ -15,7 +15,7 @@ func (p *TaskProcessor) processQueueAgent(ctx context.Context, r *models.QueueAg
 	p.l.Debug("processing queue agent", p.queueAgentLogFields(task, r)...)
 
 	if task.DeletionRequested {
-		p.l.Info("deletion requested -> activating queue agent", p.queueAgentLogFields(task, r)...)
+		p.l.Debug("deletion requested -> activating queue agent", p.queueAgentLogFields(task, r)...)
 		p.activateQueueAgent(ctx, r)
 		return
 	}
@@ -95,7 +95,7 @@ func (p *TaskProcessor) decommissionQueueAgent(ctx context.Context, r *models.Qu
 		}
 	}
 	if r.MaintenanceRequest == nil {
-		p.l.Info("starting queue agent role maintenance", p.queueAgentLogFields(task, r)...)
+		p.l.Info("starting queue agent maintenance in storage", p.queueAgentLogFields(task, r)...)
 		r.StartMaintenance(req)
 		p.tryUpdateTaskInStorage(ctx, task)
 	}
@@ -109,12 +109,12 @@ func (p *TaskProcessor) decommissionQueueAgent(ctx context.Context, r *models.Qu
 		}
 	}
 	if !r.Banned {
-		p.l.Info("banning queue agent role", p.queueAgentLogFields(task, r)...)
+		p.l.Info("banning queue agent in storage", p.queueAgentLogFields(task, r)...)
 		r.Ban()
 		p.tryUpdateTaskInStorage(ctx, task)
 	}
 
-	p.l.Info("allowing walle to take queue agent)", p.queueAgentLogFields(task, r)...)
+	p.l.Info("allowing walle to take queue agent", p.queueAgentLogFields(task, r)...)
 	r.AllowWalle()
 	p.tryUpdateTaskInStorage(ctx, task)
 }
@@ -149,7 +149,7 @@ func (p *TaskProcessor) activateQueueAgent(ctx context.Context, r *models.QueueA
 		}
 	}
 	if !permanentBan && r.Banned {
-		p.l.Info("unbanning queue agent role", p.queueAgentLogFields(task, r)...)
+		p.l.Info("unbanning queue agent in storage", p.queueAgentLogFields(task, r)...)
 		r.Unban()
 		p.tryUpdateTaskInStorage(ctx, task)
 	}
@@ -164,14 +164,16 @@ func (p *TaskProcessor) activateQueueAgent(ctx context.Context, r *models.QueueA
 		}
 	}
 	if r.InMaintenance {
-		p.l.Info("finishing queue agent role maintenance", p.queueAgentLogFields(task, r)...)
+		p.l.Info("finishing queue agent maintenance in storage", p.queueAgentLogFields(task, r)...)
 		r.FinishMaintenance()
 		p.tryUpdateTaskInStorage(ctx, task)
 	}
 
-	p.l.Info("finish processing queue agent", p.queueAgentLogFields(task, r)...)
-	r.SetFinished()
-	p.tryUpdateTaskInStorage(ctx, task)
+	if r.State != models.QueueAgentStateFinished {
+		p.l.Info("finish processing queue agent", p.queueAgentLogFields(task, r)...)
+		r.SetFinished()
+		p.tryUpdateTaskInStorage(ctx, task)
+	}
 }
 
 func (p *TaskProcessor) resolveQueueAgent(t *models.Task, r *models.QueueAgent) (*ytsys.QueueAgent, bool) {

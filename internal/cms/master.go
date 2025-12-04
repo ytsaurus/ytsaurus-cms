@@ -33,7 +33,7 @@ func (p *TaskProcessor) processMaster(ctx context.Context, r *models.Master) {
 	p.l.Debug("processing master", p.masterLogFields(task, r)...)
 
 	if task.DeletionRequested {
-		p.l.Info("walle deleted task -> setting master role as finished", p.masterLogFields(task, r)...)
+		p.l.Debug("walle deleted task -> setting master role as finished", p.masterLogFields(task, r)...)
 		p.activateMaster(ctx, r)
 		return
 	}
@@ -105,7 +105,7 @@ func (p *TaskProcessor) processFollower(ctx context.Context, task *models.Task, 
 		p.startProcessingTicket(ctx, task, r)
 	}
 
-	p.l.Info("allowing walle to take master)", p.masterLogFields(task, r)...)
+	p.l.Info("allowing walle to take master", p.masterLogFields(task, r)...)
 	r.AllowWalle()
 	p.tryUpdateTaskInStorage(ctx, task)
 }
@@ -247,7 +247,7 @@ func (p *TaskProcessor) activateMaster(ctx context.Context, r *models.Master) {
 	}
 
 	if r.InMaintenance {
-		p.l.Info("finishing master maintenance", p.masterLogFields(task, r)...)
+		p.l.Info("master maintenance finished in storage", p.masterLogFields(task, r)...)
 		r.FinishMaintenance()
 		p.tryUpdateTaskInStorage(ctx, task)
 	}

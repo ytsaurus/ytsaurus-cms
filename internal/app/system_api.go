@@ -97,7 +97,7 @@ func (a *SystemAPI) addTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dryRun := r.URL.Query().Get("dry_run") == "true"
-	a.l.Info(fmt.Sprintf("dry_run: %t", dryRun))
+	a.l.Debug(fmt.Sprintf("dry_run: %t", dryRun))
 
 	w.Header().Set("Content-Type", "application/json")
 

@@ -10,10 +10,10 @@ import (
 
 func (p *TaskProcessor) processControllerAgent(ctx context.Context, r *models.ControllerAgent) {
 	task := ctx.Value(taskKey).(*models.Task)
-	p.l.Info("processing controller agent", p.controllerAgentLogFields(task, r)...)
+	p.l.Debug("processing controller agent", p.controllerAgentLogFields(task, r)...)
 
 	if task.DeletionRequested {
-		p.l.Info("deletion requested -> activating controller agent", p.controllerAgentLogFields(task, r)...)
+		p.l.Debug("deletion requested -> activating controller agent", p.controllerAgentLogFields(task, r)...)
 		p.activateControllerAgent(ctx, r)
 		return
 	}
@@ -36,7 +36,7 @@ func (p *TaskProcessor) processPendingControllerAgent(ctx context.Context, r *mo
 	}
 
 	if p.taskCache.ControllerAgents.CountProcessed() != 0 {
-		p.l.Info("cannot allow controller agent as another one is in process",
+		p.l.Debug("cannot allow controller agent as another one is in process",
 			p.controllerAgentLogFields(task, r)...)
 		return
 	}
@@ -48,7 +48,7 @@ func (p *TaskProcessor) processPendingControllerAgent(ctx context.Context, r *mo
 	}
 
 	if len(agents) <= 1 {
-		p.l.Info("cannot allow controller agent as there are not that many left",
+		p.l.Debug("cannot allow controller agent as there are not that many left",
 			p.controllerAgentLogFields(task, r, log.Int("left_count", len(agents)))...)
 		return
 	}
@@ -58,12 +58,12 @@ func (p *TaskProcessor) processPendingControllerAgent(ctx context.Context, r *mo
 			continue
 		}
 		if err := a.ConnectionRequestError; err != nil {
-			p.l.Info("cannot allow controller agent as connection state of another one is unknown",
+			p.l.Debug("cannot allow controller agent as connection state of another one is unknown",
 				p.controllerAgentLogFields(task, r, log.Error(err))...)
 			return
 		}
 		if !a.Connected {
-			p.l.Info("cannot allow controller agent as another one is disconnected",
+			p.l.Debug("cannot allow controller agent as another one is disconnected",
 				p.controllerAgentLogFields(task, r, log.String("disconnected", a.Addr.String()))...)
 			return
 		}
@@ -103,7 +103,7 @@ func (p *TaskProcessor) decommissionControllerAgent(ctx context.Context, r *mode
 		p.tryUpdateTaskInStorage(ctx, task)
 	}
 
-	p.l.Info("allowing walle to take controller agent)", p.controllerAgentLogFields(task, r)...)
+	p.l.Info("allowing walle to take controller agent", p.controllerAgentLogFields(task, r)...)
 	r.AllowWalle()
 	p.tryUpdateTaskInStorage(ctx, task)
 }
@@ -129,14 +129,16 @@ func (p *TaskProcessor) activateControllerAgent(ctx context.Context, r *models.C
 	}
 
 	if r.InMaintenance {
-		p.l.Info("finishing controller agent maintenance", p.controllerAgentLogFields(task, r)...)
+		p.l.Info("controller agent maintenance finished in storage", p.controllerAgentLogFields(task, r)...)
 		r.FinishMaintenance()
 		p.tryUpdateTaskInStorage(ctx, task)
 	}
 
-	p.l.Info("finish processing controller agent", p.controllerAgentLogFields(task, r)...)
-	r.SetFinished()
-	p.tryUpdateTaskInStorage(ctx, task)
+	if r.State != models.ControllerAgentStateFinished {
+		p.l.Info("finish processing controller agent", p.controllerAgentLogFields(task, r)...)
+		r.SetFinished()
+		p.tryUpdateTaskInStorage(ctx, task)
+	}
 }
 
 func (p *TaskProcessor) resolveControllerAgent(t *models.Task, r *models.ControllerAgent) (*ytsys.ControllerAgent, bool) {

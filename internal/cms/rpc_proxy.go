@@ -21,7 +21,7 @@ func (p *TaskProcessor) processRPCProxy(ctx context.Context, r *models.RPCProxy)
 	proxy, ok := p.resolveRPCProxy(task, r)
 	if !ok {
 		// RPC proxy of deleted task was already removed from cypress.
-		if p.cluster.Err() == nil && task.DeletionRequested && p.CheckPathMissing(ctx, r.Path) {
+		if p.cluster.Err() == nil && task.DeletionRequested && p.CheckPathMissing(ctx, r.Path) && r.State != models.RPCProxyStateFinished {
 			p.l.Info("finish processing deleted rpc proxy", p.rpcProxyLogFields(task, r)...)
 			r.SetFinished()
 			p.tryUpdateTaskInStorage(ctx, task)
@@ -31,7 +31,7 @@ func (p *TaskProcessor) processRPCProxy(ctx context.Context, r *models.RPCProxy)
 	proxyCtx := context.WithValue(ctx, rpcProxyKey, proxy)
 
 	if task.DeletionRequested {
-		p.l.Info("deletion requested -> activating rpc proxy", p.rpcProxyLogFields(task, r)...)
+		p.l.Debug("deletion requested -> activating rpc proxy", p.rpcProxyLogFields(task, r)...)
 		p.activateRPCProxy(proxyCtx, task, proxy, r)
 		return
 	}
@@ -135,7 +135,7 @@ func (p *TaskProcessor) finishRPCProxyMaintenance(
 	}
 
 	if r.InMaintenance {
-		p.l.Info("finishing rpc proxy maintenance", p.rpcProxyLogFields(task, r)...)
+		p.l.Info("rpc proxy maintenance finished in storage", p.rpcProxyLogFields(task, r)...)
 		r.FinishMaintenance()
 		p.tryUpdateTaskInStorage(ctx, task)
 	}
@@ -206,7 +206,7 @@ func (p *TaskProcessor) unbanRPCProxy(
 	}
 
 	if r.Banned {
-		p.l.Info("unbanning rpc proxy role", p.rpcProxyLogFields(t, r)...)
+		p.l.Info("unbanning rpc proxy in storage", p.rpcProxyLogFields(t, r)...)
 		r.Unban()
 		p.tryUpdateTaskInStorage(ctx, t)
 	}

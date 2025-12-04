@@ -44,7 +44,7 @@ func (p *TaskProcessor) processNode(ctx context.Context, r *models.Node) {
 	node, ok := p.resolveNodeComponent(task, r)
 	if !ok {
 		// Node of deleted task was already removed from cypress.
-		if p.cluster.Err() == nil && task.DeletionRequested && p.CheckPathMissing(ctx, r.Path) {
+		if p.cluster.Err() == nil && task.DeletionRequested && p.CheckPathMissing(ctx, r.Path) && r.State != models.NodeStateFinished {
 			p.l.Info("finish processing deleted node", p.nodeLogFields(task, r)...)
 			r.SetFinished()
 			p.tryUpdateTaskInStorage(ctx, task)
@@ -54,7 +54,7 @@ func (p *TaskProcessor) processNode(ctx context.Context, r *models.Node) {
 	nodeCtx := context.WithValue(ctx, nodeKey, node)
 
 	if task.DeletionRequested {
-		p.l.Info("deletion requested -> activating node", p.nodeLogFields(task, r)...)
+		p.l.Debug("deletion requested -> activating node", p.nodeLogFields(task, r)...)
 		p.activateNode(nodeCtx, r)
 		return
 	}
@@ -370,7 +370,7 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, r *models.Node) {
 func (p *TaskProcessor) resolveNodeComponent(t *models.Task, r *models.Node) (*ytsys.Node, bool) {
 	c, ok := p.cluster.GetComponent(r.Path)
 	if !ok {
-		p.l.Error("unable to find node cluster component", p.nodeLogFields(t, r)...)
+		p.l.Debug("unable to find node cluster component", p.nodeLogFields(t, r)...)
 		return nil, false
 	}
 	return c.(*ytsys.Node), true
@@ -562,12 +562,12 @@ func (p *TaskProcessor) unbanNodesBecauseOfLVC(ctx context.Context) error {
 					continue
 				}
 
-				p.l.Info("unbanning node", p.nodeLogFields(t, n)...)
 				err := p.unbanNode(ctx, t, n)
 				if err != nil && firstError == nil {
 					firstError = err
 				} else if err == nil {
 					unbanned = true
+					p.l.Info("unbanned node", p.nodeLogFields(t, n)...)
 				}
 			}
 		}
@@ -587,7 +587,7 @@ func (p *TaskProcessor) unbanNode(ctx context.Context, t *models.Task, r *models
 	}
 
 	if !p.conf.UseMaintenanceAPI && strings.Contains(node.BanMessage, permanentBanSubstr) {
-		p.l.Info("can not unban node with %s in ban message",
+		p.l.Debug("can not unban node with %s in ban message",
 			p.nodeLogFields(t, r, log.String("ban_message", node.BanMessage))...)
 		return nil
 	}
@@ -600,7 +600,7 @@ func (p *TaskProcessor) unbanNode(ctx context.Context, t *models.Task, r *models
 	// 2. Cluster state is stale and thus ban status is stale.
 	// 3. UseMaintenanceAPI is true and node is banned by robot-yt-cms.
 	if needUnban {
-		p.l.Info("unbanning node", p.nodeLogFields(t, r)...)
+		p.l.Debug("unbanning node", p.nodeLogFields(t, r)...)
 		if err := unbanNode(ctx, p.dc, node, p.conf.UseMaintenanceAPI); err != nil {
 			p.l.Error("error unbanning node", p.nodeLogFields(t, r)...)
 			p.failedUnbans.Inc()
@@ -679,7 +679,6 @@ func (p *TaskProcessor) startChunkDecommission(ctx context.Context, r *models.No
 		return nil
 	}
 
-	p.l.Info("marking node decommissioned", p.nodeLogFields(task, r)...)
 	if err := markNodeDecommissioned(
 		ctx, p.dc, node,
 		p.conf.UseMaintenanceAPI,
@@ -688,6 +687,7 @@ func (p *TaskProcessor) startChunkDecommission(ctx context.Context, r *models.No
 		p.l.Error("error marking node decommissioned", p.nodeLogFields(task, r, log.Error(err))...)
 		return err
 	}
+	p.l.Info("node marked decommissioned", p.nodeLogFields(task, r)...)
 
 	updateInStorage()
 	p.cluster.OnNodeDecommission(node)
@@ -708,11 +708,11 @@ func (p *TaskProcessor) finishChunkDecommission(ctx context.Context, r *models.N
 	// 2. Cluster state is stale and thus decommission status is stale.
 	// 3. UseMaintenanceAPI is true and node is decommissioned by robot-yt-cms.
 	if needEnable {
-		p.l.Info("unmarking node decommissioned", p.nodeLogFields(task, r)...)
 		if err := unmarkNodeDecommissioned(ctx, p.dc, p.conf.UseMaintenanceAPI); err != nil {
 			p.l.Error("error unmarking node decommissioned", p.nodeLogFields(task, r, log.Error(err))...)
 			return err
 		}
+		p.l.Info("node unmarked decommissioned", p.nodeLogFields(task, r)...)
 	}
 
 	if r.DecommissionInProgress {
@@ -804,11 +804,11 @@ func (p *TaskProcessor) disableSchedulerJobs(ctx context.Context, r *models.Node
 		return nil
 	}
 
-	p.l.Info("disabling scheduler jobs", p.nodeLogFields(task, r)...)
 	if err := disableSchedulerJobs(ctx, p.dc, r, p.conf.UseMaintenanceAPI); err != nil {
 		p.l.Error("error disabling scheduler jobs", p.nodeLogFields(task, r, log.Error(err))...)
 		return err
 	}
+	p.l.Info("scheduler jobs disabled", p.nodeLogFields(task, r)...)
 
 	updateInStorage()
 
@@ -828,11 +828,11 @@ func (p *TaskProcessor) enableSchedulerJobs(ctx context.Context, r *models.Node)
 	// 2. Cluster state is stale and thus attribute value is stale.
 	// 3. UseMaintenanceAPI is true and jobs are disabled by robot-yt-cms.
 	if needEnable {
-		p.l.Info("enabling scheduler jobs", p.nodeLogFields(task, r)...)
 		if err := enableSchedulerJobs(ctx, p.dc, r, p.conf.UseMaintenanceAPI); err != nil {
 			p.l.Error("error enabling scheduler jobs", p.nodeLogFields(task, r, log.Error(err))...)
 			return err
 		}
+		p.l.Info("scheduler jobs enabled", p.nodeLogFields(task, r)...)
 	}
 
 	if r.SchedulerJobsDisabled {
@@ -871,11 +871,11 @@ func (p *TaskProcessor) disableWriteSessions(ctx context.Context, r *models.Node
 		return nil
 	}
 
-	p.l.Info("disabling write sessions", p.nodeLogFields(task, r)...)
 	if err := disableWriteSessions(ctx, p.dc, r, p.conf.UseMaintenanceAPI); err != nil {
 		p.l.Error("error disabling write sessions", p.nodeLogFields(task, r, log.Error(err))...)
 		return err
 	}
+	p.l.Info("write sessions disabled", p.nodeLogFields(task, r)...)
 
 	updateInStorage()
 
@@ -895,11 +895,11 @@ func (p *TaskProcessor) enableWriteSessions(ctx context.Context, r *models.Node)
 	// 2. Cluster state is stale and thus attribute value is stale.
 	// 3. UseMaintenanceAPI is true and sessions are disabled by robot-yt-cms.
 	if needEnable {
-		p.l.Info("enabling write sessions", p.nodeLogFields(task, r)...)
 		if err := enableWriteSessions(ctx, p.dc, r, p.conf.UseMaintenanceAPI); err != nil {
 			p.l.Error("error enabling write sessions", p.nodeLogFields(task, r, log.Error(err))...)
 			return err
 		}
+		p.l.Info("write sessions enabled", p.nodeLogFields(task, r)...)
 	}
 
 	if r.WriteSessionsDisabled {
@@ -1102,26 +1102,26 @@ func (p *TaskProcessor) checkTabletCellGuarantees(ctx context.Context, r *models
 
 		disabled := cellBundles.BalancerDisabled || !bool(*b.BalancerEnabled)
 		if disabled {
-			p.l.Info("bundle balancer is disabled", p.nodeLogFields(task, r, log.String("bundle", b.Name))...)
+			p.l.Debug("bundle balancer is disabled", p.nodeLogFields(task, r, log.String("bundle", b.Name))...)
 			p.logBundleStats(ctx, r, b)
 
 			freeSlots := p.getAvailableSlots(node, r, b) - freeSlotsUsed
 			if freeSlots <= p.conf.BundleSlotReserve {
-				p.l.Info("can not release node as there are not enough bundle slots",
+				p.l.Debug("can not release node as there are not enough bundle slots",
 					p.nodeLogFields(task, r, log.String("bundle", b.Name))...)
 				return false
 			}
 
 			freeSlotsUsed++
 		} else {
-			p.l.Info("bundle balancer is enabled",
+			p.l.Debug("bundle balancer is enabled",
 				p.nodeLogFields(task, r, log.String("bundle", b.Name),
 					log.Int("tablet_common_node_count", tabletCommonNodes),
 					log.Int("required_reserve", p.conf.TabletCommonNodeReserve))...)
 
 			tabletCommonLimitApplicable := node.HasTag(ytsys.TabletCommonTag) && p.conf.TabletCommonNodeReserve > 0
 			if tabletCommonLimitApplicable && tabletCommonNodes-1 < p.conf.TabletCommonNodeReserve {
-				p.l.Info("can not release node as there are not enough nodes tagged with 'tablet_common'",
+				p.l.Debug("can not release node as there are not enough nodes tagged with 'tablet_common'",
 					p.nodeLogFields(task, r, log.String("bundle", b.Name))...)
 				return false
 			}
@@ -1190,7 +1190,7 @@ func (p *TaskProcessor) finishNodeMaintenance(ctx context.Context, t *models.Tas
 	}
 
 	if r.InMaintenance {
-		p.l.Info("finishing node maintenance", p.nodeLogFields(t, r)...)
+		p.l.Info("node maintenance finished in storage", p.nodeLogFields(t, r)...)
 		r.FinishMaintenance()
 		p.tryUpdateTaskInStorage(ctx, t)
 	}
