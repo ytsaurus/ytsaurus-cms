@@ -14,7 +14,7 @@ const (
 
 type MissingChunksThrottlerConfig struct {
 	BlockSize time.Duration `yaml:"block_size"`
-	// maxFailurePeriod is a maximum time since the last successful period of time (of BlockSize duration)
+	// MaxFailurePeriod is a maximum time since the last successful period of time (of BlockSize duration)
 	// without check errors.
 	MaxFailurePeriod time.Duration `yaml:"max_failure_period"`
 }
