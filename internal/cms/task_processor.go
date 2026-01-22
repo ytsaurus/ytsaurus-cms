@@ -340,6 +340,7 @@ type TaskProcessor struct {
 	taskProcessingLoop     metrics.Timer
 	tasksInProcess         metrics.GaugeVec
 	gpuTasksInProcess      metrics.GaugeVec
+	masterTaskDurationVec  metrics.TimerVec
 	taskDurationVec        metrics.TimerVec
 	taskProcessingDuration metrics.Timer
 
@@ -407,6 +408,7 @@ func (p *TaskProcessor) resetReservePool(tasks []*models.Task) {
 func (p *TaskProcessor) ResetLeaderMetrics() {
 	p.reservePoolCPULimit.Set(0)
 	p.taskDurationVec.Reset()
+	p.masterTaskDurationVec.Reset()
 }
 
 func (p *TaskProcessor) initRateLimiter(tasks []*models.Task) {
@@ -493,6 +495,7 @@ func (p *TaskProcessor) RegisterMetrics(r metrics.Registry) {
 	p.taskProcessingLoop = r.Timer("task_processing_loop")
 	p.tasksInProcess = r.GaugeVec("tasks_in_process", []string{labelAction, labelProcessingState})
 	p.taskDurationVec = r.TimerVec("task_duration_vec", []string{labelTask, labelHost, labelProcessingState})
+	p.masterTaskDurationVec = r.TimerVec("master_task_duration_vec", []string{labelTask, labelHost, labelProcessingState})
 	p.gpuTasksInProcess = r.GaugeVec("gpu_tasks_in_process", []string{labelAction, labelProcessingState})
 	p.taskProcessingDuration = r.DurationHistogram("task_processing_duration", metrics.NewDurationBuckets(
 		time.Minute,
@@ -527,6 +530,7 @@ func (p *TaskProcessor) RegisterMetrics(r metrics.Registry) {
 
 func (p *TaskProcessor) resetLoopMetrics() {
 	p.taskDurationVec.Reset()
+	p.masterTaskDurationVec.Reset()
 	for _, action := range walle.HostActions {
 		for _, state := range models.TaskProcessingStates {
 			p.tasksInProcess.With(map[string]string{
@@ -560,6 +564,13 @@ func (p *TaskProcessor) initLoopMetrics(tasks []*models.Task) {
 				labelHost:            t.Hosts[0],
 				labelProcessingState: string(t.ProcessingState),
 			}).RecordDuration(time.Since(time.Time(t.CreatedAt)))
+			if len(t.GetMasters()) > 0 {
+				p.masterTaskDurationVec.With(map[string]string{
+					labelTask:            string(t.ID),
+					labelHost:            t.Hosts[0],
+					labelProcessingState: string(t.ProcessingState),
+				}).RecordDuration(time.Since(time.Time(t.CreatedAt)))
+			}
 		}
 	}
 }
