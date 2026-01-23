@@ -997,7 +997,7 @@ func (p *TaskProcessor) checkCPULimits(ctx context.Context, r *models.Node, tree
 
 	// Use reserve from fair_share_info if available.
 	if r := tree.ResourceReserves; r != nil {
-		reserve = r.CPU - p.cluster.GetDecommissionStats().CPU[tree.Name]
+		reserve = r.CPU - p.cluster.GetDecommissionStats().CPU[tree.Name] - node.ResourceLimits.CPU
 	}
 
 	relativeReserve := available * p.conf.CPUReservePercent / 100.0
