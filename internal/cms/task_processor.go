@@ -476,12 +476,8 @@ func (p *TaskProcessor) initLastNodeBanTime(tasks []*models.Task) {
 
 // initLastTaskProcessingTime initializes last task processing time.
 func (p *TaskProcessor) initLastTaskProcessingTime(tasks []*models.Task) {
-	if !p.lastTaskProcessingTime.IsZero() {
-		return
-	}
-
-	if len(tasks) == 0 {
-		p.lastTaskProcessingTime = time.Now()
+	if !p.lastTaskProcessingTime.IsZero() || len(tasks) == 0 {
+		// Keeping zero time if len(tasks) == 0 because otherwise p.reset(nil) will break metric' logic.
 		return
 	}
 
