@@ -332,17 +332,21 @@ type TaskProcessor struct {
 	// nodeBanLimiter stores a time of the latest node ban and unbans made by CMS.
 	// It is used to limit the number of parallel node bans, increasing ban interval, if LVC found.
 	nodeBanLimiter *NodeBanLimiter
+	// lastTaskProcessingTime stores time of last task processing. Used in timeSinceLastTaskProcessing metric.
+	// It becomes time.Now() if there are no new/pending tasks.
+	lastTaskProcessingTime time.Time
 
 	chunkIntegrity         *ytsys.ChunkIntegrity
 	missingChunksThrottler *MissingChunksThrottler
 
 	// Metrics.
-	taskProcessingLoop     metrics.Timer
-	tasksInProcess         metrics.GaugeVec
-	gpuTasksInProcess      metrics.GaugeVec
-	masterTaskDurationVec  metrics.TimerVec
-	taskDurationVec        metrics.TimerVec
-	taskProcessingDuration metrics.Timer
+	taskProcessingLoop          metrics.Timer
+	tasksInProcess              metrics.GaugeVec
+	gpuTasksInProcess           metrics.GaugeVec
+	masterTaskDurationVec       metrics.TimerVec
+	taskDurationVec             metrics.TimerVec
+	timeSinceLastTaskProcessing metrics.Timer
+	taskProcessingDuration      metrics.Timer
 
 	chunkIntegrityCheckErrors       metrics.Counter
 	manualConfirmationErrors        metrics.Counter
@@ -395,6 +399,7 @@ func (p *TaskProcessor) reset(tasks []*models.Task) {
 	p.initGPURateLimiter(tasks)
 	p.nodeBanLimiter = NewNodeBanLimiter(p.conf.BannedNodeHoldOffPeriod, p.conf.MaxBannedNodeHoldOffPeriod)
 	p.initLastNodeBanTime(tasks)
+	p.initLastTaskProcessingTime(tasks)
 }
 
 func (p *TaskProcessor) resetMissingChunksThrottler() {
@@ -407,8 +412,8 @@ func (p *TaskProcessor) resetReservePool(tasks []*models.Task) {
 
 func (p *TaskProcessor) ResetLeaderMetrics() {
 	p.reservePoolCPULimit.Set(0)
-	p.taskDurationVec.Reset()
 	p.masterTaskDurationVec.Reset()
+	p.taskDurationVec.Reset()
 }
 
 func (p *TaskProcessor) initRateLimiter(tasks []*models.Task) {
@@ -469,6 +474,42 @@ func (p *TaskProcessor) initLastNodeBanTime(tasks []*models.Task) {
 		log.String("last_banned_node_group", p.lastBannedNodeGroup))
 }
 
+// initLastTaskProcessingTime initializes last task processing time.
+func (p *TaskProcessor) initLastTaskProcessingTime(tasks []*models.Task) {
+	if !p.lastTaskProcessingTime.IsZero() {
+		return
+	}
+
+	if len(tasks) == 0 {
+		p.lastTaskProcessingTime = time.Now()
+		return
+	}
+
+	// Taking oldest CreatedAt time.
+	for _, t := range tasks {
+		if t.ProcessingState == models.StateNew || t.ProcessingState == models.StatePending {
+			if p.lastTaskProcessingTime.IsZero() {
+				p.lastTaskProcessingTime = time.Time(t.CreatedAt)
+			}
+			if p.lastTaskProcessingTime.After(time.Time(t.CreatedAt)) {
+				p.lastTaskProcessingTime = time.Time(t.CreatedAt)
+			}
+		}
+	}
+
+	// Taking newest ProcessedAt time.
+	for _, t := range tasks {
+		if t.ProcessingState != models.StateNew && t.ProcessingState != models.StatePending {
+			if p.lastTaskProcessingTime.IsZero() {
+				p.lastTaskProcessingTime = time.Time(t.ProcessedAt)
+			}
+			if p.lastTaskProcessingTime.Before(time.Time(t.ProcessedAt)) {
+				p.lastTaskProcessingTime = time.Time(t.ProcessedAt)
+			}
+		}
+	}
+}
+
 // ensureState initializes task processor.
 //
 // The operation is retried infinitely until success.
@@ -494,8 +535,9 @@ func (p *TaskProcessor) ensureState(ctx context.Context) error {
 func (p *TaskProcessor) RegisterMetrics(r metrics.Registry) {
 	p.taskProcessingLoop = r.Timer("task_processing_loop")
 	p.tasksInProcess = r.GaugeVec("tasks_in_process", []string{labelAction, labelProcessingState})
-	p.taskDurationVec = r.TimerVec("task_duration_vec", []string{labelTask, labelHost, labelProcessingState})
 	p.masterTaskDurationVec = r.TimerVec("master_task_duration_vec", []string{labelTask, labelHost, labelProcessingState})
+	p.taskDurationVec = r.TimerVec("task_duration_vec", []string{labelTask, labelHost, labelProcessingState})
+	p.timeSinceLastTaskProcessing = r.Timer("time_since_last_task_processing")
 	p.gpuTasksInProcess = r.GaugeVec("gpu_tasks_in_process", []string{labelAction, labelProcessingState})
 	p.taskProcessingDuration = r.DurationHistogram("task_processing_duration", metrics.NewDurationBuckets(
 		time.Minute,
@@ -750,17 +792,25 @@ func (p *TaskProcessor) updateTasks(ctx context.Context) error {
 		return err
 	}
 
+	var pendingTaskCount int
 	for _, t := range tasks {
 		s := t.ProcessingState
 		switch s {
-		case models.StateNew, models.StatePending, models.StateDecommissioned,
-			models.StateProcessed, models.StateConfirmedManually:
+		case models.StateNew, models.StatePending:
+			pendingTaskCount++
+			p.processTask(ctx, t)
+		case models.StateDecommissioned, models.StateProcessed, models.StateConfirmedManually:
 			p.processTask(ctx, t)
 		default:
 			p.l.Error("unknown processing state", log.String("state", string(s)))
 			p.unknownStateTasks.Inc()
 		}
 	}
+
+	if pendingTaskCount == 0 {
+		p.lastTaskProcessingTime = time.Now()
+	}
+	p.timeSinceLastTaskProcessing.RecordDuration(time.Since(p.lastTaskProcessingTime))
 
 	return nil
 }
@@ -1213,6 +1263,7 @@ func (p *TaskProcessor) processTask(ctx context.Context, t *models.Task) {
 		for _, host := range t.Hosts {
 			p.l.Info("all task hosts processed", log.Any("task", t), log.String("host", host))
 		}
+		p.lastTaskProcessingTime = time.Now()
 		p.tryUpdateTaskInStorage(ctx, t)
 		return
 	} else {
