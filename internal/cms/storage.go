@@ -91,7 +91,7 @@ func (s *dynamicTableStorage) update(ctx context.Context, task *models.Task, ove
 	}
 
 	if len(tasks) > 1 {
-		panic(xerrors.Errorf("task id must be unique; got %d tasks: %+v", len(tasks), tasks))
+		panic(xerrors.Errorf("task id must be unique; task: %+v; got %d tasks: %v", *task, len(tasks), tasksString(tasks)))
 	}
 
 	if len(tasks) == 1 && overwrite {
@@ -101,7 +101,7 @@ func (s *dynamicTableStorage) update(ctx context.Context, task *models.Task, ove
 		task.DeletionRequested = tasks[0].DeletionRequested
 		task.DeletionRequestedAt = tasks[0].DeletionRequestedAt
 	} else if len(tasks) == 1 && !overwrite {
-		panic(xerrors.Errorf("task id must be unique; got %d tasks: %+v", len(tasks), tasks))
+		panic(xerrors.Errorf("task id must be unique; task: %+v; cannot overwrite found task: %v", *task, tasksString(tasks)))
 	}
 
 	rows := []any{task}
@@ -128,7 +128,7 @@ func (s *dynamicTableStorage) Get(ctx context.Context, id walle.TaskID) (*models
 		return nil, err
 	}
 	if len(tasks) > 1 {
-		panic(xerrors.Errorf("task id must be unique; got %d tasks: %+v", len(tasks), tasks))
+		panic(xerrors.Errorf("task id must be unique; task id: %v; got %d tasks: %v", id, len(tasks), tasksString(tasks)))
 	}
 	if len(tasks) == 0 {
 		return nil, xerrors.Errorf("unable to find task id %s: %w", id, TaskNotFoundErr)
@@ -227,8 +227,8 @@ func (s *dynamicTableStorage) loadTask(ctx context.Context, id walle.TaskID, tx 
 		return nil, err
 	}
 
-	if len(tasks) > 2 {
-		panic(xerrors.Errorf("task id must be unique; got %d tasks: %+v", len(tasks), tasks))
+	if len(tasks) > 1 {
+		panic(xerrors.Errorf("task id must be unique; task id: %v; got %d tasks: %v", id, len(tasks), tasksString(tasks)))
 	}
 
 	if len(tasks) == 0 {

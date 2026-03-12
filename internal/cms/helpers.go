@@ -2,6 +2,7 @@ package cms
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"go.ytsaurus.tech/library/go/ptr"
@@ -172,4 +173,16 @@ func getPodIDFromYPath(path ypath.Path) string {
 	shortAddr := strings.Split(addr, ".")[0]
 
 	return shortAddr
+}
+
+func tasksString(tasks []*models.Task) string {
+	str := ""
+	for _, t := range tasks {
+		if t == nil {
+			str += "<nil> "
+			continue
+		}
+		str += fmt.Sprintf("%+v ", *t)
+	}
+	return str
 }
