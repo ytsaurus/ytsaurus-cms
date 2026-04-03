@@ -8,28 +8,25 @@ import (
 	"go.ytsaurus.tech/yt/go/ytsys"
 )
 
-func (p *TaskProcessor) processScheduler(ctx context.Context, r *models.Scheduler) {
-	task := ctx.Value(taskKey).(*models.Task)
+func (p *TaskProcessor) processScheduler(ctx context.Context, task *models.Task, r *models.Scheduler) {
 	p.l.Debug("processing scheduler", p.schedulerLogFields(task, r)...)
 
 	if task.DeletionRequested {
 		p.l.Debug("deletion requested -> activating scheduler", p.schedulerLogFields(task, r)...)
-		p.activateScheduler(ctx, r)
+		p.activateScheduler(ctx, task, r)
 		return
 	}
 
 	switch r.State {
 	case models.SchedulerStateAccepted:
-		p.processPendingScheduler(ctx, r)
+		p.processPendingScheduler(ctx, task, r)
 	case models.SchedulerStateProcessed:
 	default:
 		p.l.Error("unexpected scheduler state", log.String("state", string(r.State)))
 	}
 }
 
-func (p *TaskProcessor) processPendingScheduler(ctx context.Context, r *models.Scheduler) {
-	task := ctx.Value(taskKey).(*models.Task)
-
+func (p *TaskProcessor) processPendingScheduler(ctx context.Context, task *models.Task, r *models.Scheduler) {
 	scheduler, ok := p.resolveScheduler(task, r)
 	if !ok {
 		return
@@ -77,12 +74,10 @@ func (p *TaskProcessor) processPendingScheduler(ctx context.Context, r *models.S
 	}
 
 	p.l.Info("schedulers are alive -> proceeding to decommission", p.schedulerLogFields(task, r)...)
-	p.decommissionScheduler(ctx, r)
+	p.decommissionScheduler(ctx, task, r)
 }
 
-func (p *TaskProcessor) decommissionScheduler(ctx context.Context, r *models.Scheduler) {
-	task := ctx.Value(taskKey).(*models.Task)
-
+func (p *TaskProcessor) decommissionScheduler(ctx context.Context, task *models.Task, r *models.Scheduler) {
 	scheduler, ok := p.resolveScheduler(task, r)
 	if !ok {
 		p.l.Error("unable to find scheduler", p.schedulerLogFields(task, r)...)
@@ -114,9 +109,7 @@ func (p *TaskProcessor) decommissionScheduler(ctx context.Context, r *models.Sch
 	p.tryUpdateTaskInStorage(ctx, task)
 }
 
-func (p *TaskProcessor) activateScheduler(ctx context.Context, r *models.Scheduler) {
-	task := ctx.Value(taskKey).(*models.Task)
-
+func (p *TaskProcessor) activateScheduler(ctx context.Context, task *models.Task, r *models.Scheduler) {
 	scheduler, ok := p.resolveScheduler(task, r)
 	if !ok {
 		p.l.Error("unable to find scheduler", p.schedulerLogFields(task, r)...)

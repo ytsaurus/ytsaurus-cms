@@ -32,13 +32,7 @@ type DecommissionOptions struct {
 	LimitDisabledSessionsWaitTime      bool
 }
 
-type nodeKeyType int
-
-// nodeKey is a key used to access cached cluster node state in ctx.
-var nodeKey nodeKeyType
-
-func (p *TaskProcessor) processNode(ctx context.Context, r *models.Node) {
-	task := ctx.Value(taskKey).(*models.Task)
+func (p *TaskProcessor) processNode(ctx context.Context, task *models.Task, r *models.Node) {
 	p.l.Debug("processing node", p.nodeLogFields(task, r)...)
 
 	node, ok := p.resolveNodeComponent(task, r)
@@ -51,22 +45,21 @@ func (p *TaskProcessor) processNode(ctx context.Context, r *models.Node) {
 		}
 		return
 	}
-	nodeCtx := context.WithValue(ctx, nodeKey, node)
 
 	if task.DeletionRequested {
 		p.l.Debug("deletion requested -> activating node", p.nodeLogFields(task, r)...)
-		p.activateNode(nodeCtx, r)
+		p.activateNode(ctx, task, node, r)
 		return
 	}
 
-	if !p.checkOfflineNodesConstraint(ctx, r) {
+	if !p.checkOfflineNodesConstraint(ctx, task, node, r) {
 		p.l.Debug("offline node constraint failed -> skipping node", p.nodeLogFields(task, r)...)
 		return
 	}
 
 	switch r.State {
 	case models.NodeStateAccepted, models.NodeStateDecommissioned:
-		p.processPendingNode(nodeCtx, r)
+		p.processPendingNode(ctx, task, node, r)
 	case models.NodeStateProcessed:
 	default:
 		p.l.Error("unexpected node state", log.String("state", string(r.State)))
@@ -74,9 +67,7 @@ func (p *TaskProcessor) processNode(ctx context.Context, r *models.Node) {
 }
 
 // checkOfflineNodesConstraint checks whether there are not that many offline nodes in cluster.
-func (p *TaskProcessor) checkOfflineNodesConstraint(ctx context.Context, r *models.Node) bool {
-	task := ctx.Value(taskKey).(*models.Task)
-
+func (p *TaskProcessor) checkOfflineNodesConstraint(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) bool {
 	if !p.conf.UseMaxOfflineNodesConstraint {
 		return true
 	}
@@ -102,35 +93,32 @@ func (p *TaskProcessor) checkOfflineNodesConstraint(ctx context.Context, r *mode
 	return offlineNodeCount <= p.conf.MaxOfflineNodes
 }
 
-func (p *TaskProcessor) processPendingNode(ctx context.Context, r *models.Node) {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) processPendingNode(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) {
 	if node.Banned {
 		p.l.Debug("node is banned -> proceeding to decommission", p.nodeLogFields(task, r)...)
-		p.decommissionNode(ctx, r)
+		p.decommissionNode(ctx, task, node, r)
 		return
 	}
 
 	if p.checkNodeOffline(node) {
 		p.l.Debug("node is offline for a long time -> proceeding to decommission",
 			p.nodeLogFields(task, r, log.Time("last_seen_time", time.Time(node.LastSeenTime)))...)
-		p.decommissionNode(ctx, r)
+		p.decommissionNode(ctx, task, node, r)
 		return
 	}
 
 	switch task.Action {
 	case walle.ActionPrepare:
-		p.decommissionSlow(ctx, r)
+		p.decommissionSlow(ctx, task, node, r)
 	case walle.ActionRepairLink, walle.ActionTemporaryUnreachable, walle.ActionRedeploy,
 		walle.ActionReboot, walle.ActionProfile:
-		p.decommissionFast(ctx, r)
+		p.decommissionFast(ctx, task, node, r)
 	case walle.ActionDeactivate, walle.ActionPowerOff, walle.ActionChangeDisk:
 		switch task.Type {
 		case walle.TaskTypeAutomated:
-			p.decommissionSlow(ctx, r)
+			p.decommissionSlow(ctx, task, node, r)
 		case walle.TaskTypeManual:
-			p.decommissionFast(ctx, r)
+			p.decommissionFast(ctx, task, node, r)
 		}
 	default:
 		p.l.Warn("unexpected task action", p.nodeLogFields(task, r)...)
@@ -141,17 +129,17 @@ func (p *TaskProcessor) processPendingNode(ctx context.Context, r *models.Node) 
 //
 // Used when the machine does not threaten cluster integrity
 // and the request does not require any urgency.
-func (p *TaskProcessor) decommissionSlow(ctx context.Context, r *models.Node) {
+func (p *TaskProcessor) decommissionSlow(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) {
 	o := &DecommissionOptions{
 		OverrideRemovalSlots:               true,
 		WaitChunkDecommission:              true,
 		LimitDisabledSchedulerJobsWaitTime: false,
 		LimitDisabledSessionsWaitTime:      false,
 	}
-	if !p.checkDecommissionReady(ctx, r, o) {
+	if !p.checkDecommissionReady(ctx, task, node, r, o) {
 		return
 	}
-	p.decommissionNode(ctx, r)
+	p.decommissionNode(ctx, task, node, r)
 }
 
 // decommissionFast decommissions node omitting some checks (e.g. waiting for chunk decommission).
@@ -159,45 +147,42 @@ func (p *TaskProcessor) decommissionSlow(ctx context.Context, r *models.Node) {
 // Used when the machine does not threaten cluster integrity
 // but the task was created manually or
 // the intended action is very fast and does not lead to redeploy.
-func (p *TaskProcessor) decommissionFast(ctx context.Context, r *models.Node) {
+func (p *TaskProcessor) decommissionFast(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) {
 	o := &DecommissionOptions{
 		OverrideRemovalSlots:               true,
 		LimitDisabledSchedulerJobsWaitTime: true,
 		LimitDisabledSessionsWaitTime:      true,
 	}
-	if !p.checkDecommissionReady(ctx, r, o) {
+	if !p.checkDecommissionReady(ctx, task, node, r, o) {
 		return
 	}
-	p.decommissionNode(ctx, r)
+	p.decommissionNode(ctx, task, node, r)
 }
 
 // decommissionUrgent decommissions node ASAP.
 //
 // Used when the machine threatens cluster integrity or
 // when the task was created manually.
-func (p *TaskProcessor) decommissionUrgent(ctx context.Context, r *models.Node) {
+func (p *TaskProcessor) decommissionUrgent(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) {
 	o := &DecommissionOptions{
 		SkipConstraintCheck:                true,
 		LimitDisabledSchedulerJobsWaitTime: true,
 		LimitDisabledSessionsWaitTime:      true,
 	}
-	if !p.checkDecommissionReady(ctx, r, o) {
+	if !p.checkDecommissionReady(ctx, task, node, r, o) {
 		return
 	}
-	p.decommissionNode(ctx, r)
+	p.decommissionNode(ctx, task, node, r)
 }
 
 // checkDecommissionReady checks whether node is ready to be decommissioned or not.
-func (p *TaskProcessor) checkDecommissionReady(ctx context.Context, r *models.Node, o *DecommissionOptions) bool {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) checkDecommissionReady(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node, o *DecommissionOptions) bool {
 	if err := p.startNodeMaintenance(ctx, task, node, r); err != nil {
 		return false
 	}
 
 	if !o.SkipConstraintCheck {
-		if !p.checkNodeConstraints(ctx, r) {
+		if !p.checkNodeConstraints(ctx, task, node, r) {
 			p.l.Debug("node constraints are not met -> postponing node decommission", p.nodeLogFields(task, r)...)
 			return false
 		}
@@ -206,55 +191,53 @@ func (p *TaskProcessor) checkDecommissionReady(ctx context.Context, r *models.No
 		p.l.Debug("skipping node constraints check -> proceeding to decommission", p.nodeLogFields(task, r)...)
 	}
 
-	if err := p.startChunkDecommission(ctx, r); err != nil {
+	if err := p.startChunkDecommission(ctx, task, node, r); err != nil {
 		return false
 	}
 
 	if o.OverrideRemovalSlots {
-		if err := p.overrideRemovalSlots(ctx, r); err != nil {
+		if err := p.overrideRemovalSlots(ctx, task, node, r); err != nil {
 			return false
 		}
 	}
 
-	if err := p.disableWriteSessions(ctx, r); err != nil {
+	if err := p.disableWriteSessions(ctx, task, node, r); err != nil {
 		return false
 	}
 
-	if err := p.disableSchedulerJobs(ctx, r); err != nil {
+	if err := p.disableSchedulerJobs(ctx, task, node, r); err != nil {
 		return false
 	}
 
-	if !p.checkTabletCellsDecommissioned(ctx, r) {
+	if !p.checkTabletCellsDecommissioned(ctx, task, node, r) {
 		return false
 	}
 
 	if o.WaitChunkDecommission {
-		if !p.checkChunksDecommissioned(ctx, r) {
+		if !p.checkChunksDecommissioned(ctx, task, node, r) {
 			return false
 		}
 	}
 
-	if !p.checkWriteSessionsDisabled(ctx, r, o.LimitDisabledSessionsWaitTime) {
+	if !p.checkWriteSessionsDisabled(ctx, task, node, r, o.LimitDisabledSessionsWaitTime) {
 		return false
 	}
 
-	if !p.checkSchedulerJobsDisabled(ctx, r, o.LimitDisabledSchedulerJobsWaitTime) {
+	if !p.checkSchedulerJobsDisabled(ctx, task, node, r, o.LimitDisabledSchedulerJobsWaitTime) {
 		return false
 	}
 
 	return true
 }
 
-func (p *TaskProcessor) checkNodeConstraints(ctx context.Context, r *models.Node) bool {
-	task := ctx.Value(taskKey).(*models.Task)
-
-	if !p.checkResourceLimits(ctx, r) {
+func (p *TaskProcessor) checkNodeConstraints(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) bool {
+	if !p.checkResourceLimits(ctx, task, node, r) {
 		p.l.Debug("resource limits are not met -> postponing node decommission", p.nodeLogFields(task, r)...)
 		return false
 	}
 	p.l.Debug("node resource limits are met", p.nodeLogFields(task, r)...)
 
-	if !p.checkTabletCellGuarantees(ctx, r) {
+	if !p.checkTabletCellGuarantees(ctx, task, node, r) {
 		p.l.Debug("tablet cell guarantees are not met -> postponing node decommission", p.nodeLogFields(task, r)...)
 		return false
 	}
@@ -263,9 +246,7 @@ func (p *TaskProcessor) checkNodeConstraints(ctx context.Context, r *models.Node
 	return true
 }
 
-func (p *TaskProcessor) needBanNode(ctx context.Context, r *models.Node) bool {
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) needBanNode(ctx context.Context, node *ytsys.Node, r *models.Node) bool {
 	if p.conf.UseMaintenanceAPI {
 		return !containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeBan) &&
 			!r.Banned
@@ -275,11 +256,8 @@ func (p *TaskProcessor) needBanNode(ctx context.Context, r *models.Node) bool {
 }
 
 // decommissionNode bans node and allows walle to take the role after some period.
-func (p *TaskProcessor) decommissionNode(ctx context.Context, r *models.Node) {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
-	if !p.needBanNode(ctx, r) {
+func (p *TaskProcessor) decommissionNode(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) {
+	if !p.needBanNode(ctx, node, r) {
 		if !r.Banned { // Node was banned by someone else (not this service) or storage was not updated.
 			banTime := node.LastSeenTime
 			if time.Time(r.UnbanTime).After(time.Time(banTime)) {
@@ -292,7 +270,7 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, r *models.Node) {
 
 		if p.checkNodeOffline(node) {
 			p.l.Debug("allowing walle to take inactive node (banned and offline)", p.nodeLogFields(task, r)...)
-			p.allowNode(ctx, node, r)
+			p.allowNode(ctx, task, node, r)
 		} else {
 			p.l.Debug("not allowing walle to take banned node yet",
 				p.nodeLogFields(task, r,
@@ -356,7 +334,7 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, r *models.Node) {
 
 	if nodeWithoutChunks {
 		p.l.Debug("allowing walle to take node with no data", p.nodeLogFields(task, r)...)
-		p.allowNode(ctx, node, r)
+		p.allowNode(ctx, task, node, r)
 		return
 	}
 
@@ -367,10 +345,10 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, r *models.Node) {
 	}
 }
 
-func (p *TaskProcessor) resolveNodeComponent(t *models.Task, r *models.Node) (*ytsys.Node, bool) {
+func (p *TaskProcessor) resolveNodeComponent(task *models.Task, r *models.Node) (*ytsys.Node, bool) {
 	c, ok := p.cluster.GetComponent(r.Path)
 	if !ok {
-		p.l.Debug("unable to find node cluster component", p.nodeLogFields(t, r)...)
+		p.l.Debug("unable to find node cluster component", p.nodeLogFields(task, r)...)
 		return nil, false
 	}
 	return c.(*ytsys.Node), true
@@ -384,10 +362,7 @@ func (p *TaskProcessor) checkNodeOffline(node *ytsys.Node) bool {
 	return node.State == ytsys.NodeStateOffline && offlinePeriod > p.Conf().OfflineNodeRetentionPeriod
 }
 
-func (p *TaskProcessor) checkTabletCellsDecommissioned(ctx context.Context, r *models.Node) bool {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) checkTabletCellsDecommissioned(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) bool {
 	for _, s := range node.TabletSlots {
 		if s.State != ytsys.TabletSlotStateNone {
 			p.l.Debug("some tablet slots are not free -> continue waiting",
@@ -400,10 +375,7 @@ func (p *TaskProcessor) checkTabletCellsDecommissioned(ctx context.Context, r *m
 	return true
 }
 
-func (p *TaskProcessor) checkChunksDecommissioned(ctx context.Context, r *models.Node) bool {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) checkChunksDecommissioned(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) bool {
 	if r.TotalStoredChunks != node.Statistics.TotalStoredChunkCount {
 		r.UpdateTotalStoredChunks(node.Statistics.TotalStoredChunkCount)
 		p.l.Debug("updating node's total stored chunk count",
@@ -446,10 +418,7 @@ func (p *TaskProcessor) checkChunksDecommissioned(ctx context.Context, r *models
 	return false
 }
 
-func (p *TaskProcessor) checkWriteSessionsDisabled(ctx context.Context, r *models.Node, limitTime bool) bool {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) checkWriteSessionsDisabled(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node, limitTime bool) bool {
 	sessionCount := node.Statistics.TotalSessionCount
 	disabledFor := time.Since(time.Time(r.WriteSessionsDisableTime))
 	timeout := p.getDisabledWriteSessionsWaitTimeout(task)
@@ -471,10 +440,7 @@ func (p *TaskProcessor) getDisabledWriteSessionsWaitTimeout(task *models.Task) t
 	return p.conf.DisabledWriteSessionsWaitTimeout
 }
 
-func (p *TaskProcessor) checkSchedulerJobsDisabled(ctx context.Context, r *models.Node, limitTime bool) bool {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) checkSchedulerJobsDisabled(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node, limitTime bool) bool {
 	slots := node.ResourceUsage.UserSlots
 	disabledFor := time.Since(time.Time(r.SchedulerJobsDisableTime))
 	timeout := p.getDisabledSchedulerJobsWaitTimeout(task)
@@ -508,11 +474,9 @@ func (p *TaskProcessor) makeBanMessage(task *models.Task) string {
 		models.DecisionMakerCMS, banTime, task.ID)
 }
 
-func (p *TaskProcessor) allowNode(ctx context.Context, n *ytsys.Node, r *models.Node) {
-	task := ctx.Value(taskKey).(*models.Task)
-
+func (p *TaskProcessor) allowNode(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) {
 	p.l.Debug("executing pre allow hook", p.nodeLogFields(task, r)...)
-	if err := p.preNodeAllowHook(ctx, task, n, r); err != nil {
+	if err := p.preNodeAllowHook(ctx, task, node, r); err != nil {
 		p.l.Debug("pre allow hook execution failed", p.nodeLogFields(task, r, log.Error(err))...)
 		return
 	}
@@ -524,14 +488,14 @@ func (p *TaskProcessor) allowNode(ctx context.Context, n *ytsys.Node, r *models.
 }
 
 // nodeLogFields creates a slice with task and node fields to log.
-func (p *TaskProcessor) nodeLogFields(t *models.Task, n *models.Node, extra ...log.Field) []log.Field {
+func (p *TaskProcessor) nodeLogFields(task *models.Task, n *models.Node, extra ...log.Field) []log.Field {
 	fields := []log.Field{
-		log.String("task_id", string(t.ID)),
+		log.String("task_id", string(task.ID)),
 		log.String("host", n.Host),
 		log.String("addr", n.Addr.String()),
 		log.String("pod_id", strings.Split(n.Addr.FQDN, ".")[0]),
-		log.Bool("group_task", t.IsGroupTask),
-		log.String("group_id", t.MaintenanceInfo.NodeSetID),
+		log.Bool("group_task", task.IsGroupTask),
+		log.String("group_id", task.MaintenanceInfo.NodeSetID),
 	}
 	fields = append(fields, extra...)
 	return fields
@@ -546,12 +510,12 @@ func (p *TaskProcessor) unbanNodesBecauseOfLVC(ctx context.Context) error {
 	var firstError error
 	var unbanned bool
 
-	for _, t := range tasks {
-		if t.WalleStatus == walle.StatusOK {
+	for _, task := range tasks {
+		if task.WalleStatus == walle.StatusOK {
 			continue
 		}
 
-		for _, h := range t.HostStates {
+		for _, h := range task.HostStates {
 			for _, r := range h.Roles {
 				if r.Type != ytsys.RoleNode {
 					continue
@@ -562,12 +526,12 @@ func (p *TaskProcessor) unbanNodesBecauseOfLVC(ctx context.Context) error {
 					continue
 				}
 
-				err := p.unbanNode(ctx, t, n)
+				err := p.unbanNode(ctx, task, n)
 				if err != nil && firstError == nil {
 					firstError = err
 				} else if err == nil {
 					unbanned = true
-					p.l.Info("unbanned node", p.nodeLogFields(t, n)...)
+					p.l.Info("unbanned node", p.nodeLogFields(task, n)...)
 				}
 			}
 		}
@@ -580,19 +544,19 @@ func (p *TaskProcessor) unbanNodesBecauseOfLVC(ctx context.Context) error {
 	return firstError
 }
 
-func (p *TaskProcessor) unbanNode(ctx context.Context, t *models.Task, r *models.Node) error {
-	node, ok := p.resolveNodeComponent(t, r)
+func (p *TaskProcessor) unbanNode(ctx context.Context, task *models.Task, r *models.Node) error {
+	node, ok := p.resolveNodeComponent(task, r)
 	if !ok {
 		return nil
 	}
 
 	if !p.conf.UseMaintenanceAPI && strings.Contains(node.BanMessage, permanentBanSubstr) {
 		p.l.Debug("can not unban node with %s in ban message",
-			p.nodeLogFields(t, r, log.String("ban_message", node.BanMessage))...)
+			p.nodeLogFields(task, r, log.String("ban_message", node.BanMessage))...)
 		return nil
 	}
 
-	bannedRecently := time.Time(r.BanTime).After(p.cluster.LastReloadTime())
+	bannedRecently := time.Time(r.BanTime).After(p.CachedClusterReloadTime(ctx))
 	needUnban := p.conf.UseMaintenanceAPI && r.Banned ||
 		bool(node.Banned) || !bool(node.Banned) && bannedRecently
 	// Node must be unbanned in the following cases:
@@ -600,45 +564,42 @@ func (p *TaskProcessor) unbanNode(ctx context.Context, t *models.Task, r *models
 	// 2. Cluster state is stale and thus ban status is stale.
 	// 3. UseMaintenanceAPI is true and node is banned by robot-yt-cms.
 	if needUnban {
-		p.l.Debug("unbanning node", p.nodeLogFields(t, r)...)
+		p.l.Debug("unbanning node", p.nodeLogFields(task, r)...)
 		if err := unbanNode(ctx, p.dc, node, p.conf.UseMaintenanceAPI); err != nil {
-			p.l.Error("error unbanning node", p.nodeLogFields(t, r)...)
+			p.l.Error("error unbanning node", p.nodeLogFields(task, r)...)
 			p.failedUnbans.Inc()
 			return err
 		}
-		p.l.Info("node unbanned", p.nodeLogFields(t, r)...)
+		p.l.Info("node unbanned", p.nodeLogFields(task, r)...)
 	}
 
 	if r.Banned {
-		p.l.Info("unbanning node in storage", p.nodeLogFields(t, r)...)
+		p.l.Info("unbanning node in storage", p.nodeLogFields(task, r)...)
 		r.Unban()
-		p.tryUpdateTaskInStorage(ctx, t)
+		p.tryUpdateTaskInStorage(ctx, task)
 	}
 
 	return nil
 }
 
-func (p *TaskProcessor) activateNode(ctx context.Context, r *models.Node) {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) activateNode(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) {
 	if err := p.unbanNode(ctx, task, r); err != nil {
 		return
 	}
 
-	if err := p.enableSchedulerJobs(ctx, r); err != nil {
+	if err := p.enableSchedulerJobs(ctx, task, node, r); err != nil {
 		return
 	}
 
-	if err := p.enableWriteSessions(ctx, r); err != nil {
+	if err := p.enableWriteSessions(ctx, task, node, r); err != nil {
 		return
 	}
 
-	if err := p.dropRemovalSlotsOverride(ctx, r); err != nil {
+	if err := p.dropRemovalSlotsOverride(ctx, task, node, r); err != nil {
 		return
 	}
 
-	if err := p.finishChunkDecommission(ctx, r); err != nil {
+	if err := p.finishChunkDecommission(ctx, task, node, r); err != nil {
 		return
 	}
 
@@ -650,9 +611,7 @@ func (p *TaskProcessor) activateNode(ctx context.Context, r *models.Node) {
 	p.tryUpdateTaskInStorage(ctx, task)
 }
 
-func (p *TaskProcessor) needDecommission(ctx context.Context, r *models.Node) bool {
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) needDecommission(ctx context.Context, node *ytsys.Node, r *models.Node) bool {
 	if p.conf.UseMaintenanceAPI {
 		return !containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeDecommission) &&
 			!r.DecommissionInProgress
@@ -661,18 +620,15 @@ func (p *TaskProcessor) needDecommission(ctx context.Context, r *models.Node) bo
 	return !bool(node.Decommissioned)
 }
 
-// startChunkDecommission stats node decommission if it isn't already decommissioned.
-func (p *TaskProcessor) startChunkDecommission(ctx context.Context, r *models.Node) error {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+// startChunkDecommission stats node decommission if it isn'task already decommissioned.
+func (p *TaskProcessor) startChunkDecommission(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) error {
 	updateInStorage := func() {
 		r.MarkDecommissioned(node.Statistics.TotalStoredChunkCount)
 		p.l.Info("marking node decommissioned", p.nodeLogFields(task, r)...)
 		p.tryUpdateTaskInStorage(ctx, task)
 	}
 
-	if !p.needDecommission(ctx, r) {
+	if !p.needDecommission(ctx, node, r) {
 		if !r.DecommissionInProgress {
 			updateInStorage()
 		}
@@ -696,11 +652,8 @@ func (p *TaskProcessor) startChunkDecommission(ctx context.Context, r *models.No
 }
 
 // finishChunkDecommission stops node decommission.
-func (p *TaskProcessor) finishChunkDecommission(ctx context.Context, r *models.Node) error {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
-	decommissionedRecently := time.Time(r.MarkedDecommissionedTime).After(p.cluster.LastReloadTime())
+func (p *TaskProcessor) finishChunkDecommission(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) error {
+	decommissionedRecently := time.Time(r.MarkedDecommissionedTime).After(p.CachedClusterReloadTime(ctx))
 	needEnable := p.conf.UseMaintenanceAPI && r.Decommissioned() ||
 		bool(node.Decommissioned) || !bool(node.Decommissioned) && decommissionedRecently
 	// @decommission attribute must be unset in the following cases:
@@ -708,7 +661,7 @@ func (p *TaskProcessor) finishChunkDecommission(ctx context.Context, r *models.N
 	// 2. Cluster state is stale and thus decommission status is stale.
 	// 3. UseMaintenanceAPI is true and node is decommissioned by robot-yt-cms.
 	if needEnable {
-		if err := unmarkNodeDecommissioned(ctx, p.dc, p.conf.UseMaintenanceAPI); err != nil {
+		if err := unmarkNodeDecommissioned(ctx, p.dc, node, p.conf.UseMaintenanceAPI); err != nil {
 			p.l.Error("error unmarking node decommissioned", p.nodeLogFields(task, r, log.Error(err))...)
 			return err
 		}
@@ -723,10 +676,7 @@ func (p *TaskProcessor) finishChunkDecommission(ctx context.Context, r *models.N
 	return nil
 }
 
-func (p *TaskProcessor) overrideRemovalSlots(ctx context.Context, r *models.Node) error {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) overrideRemovalSlots(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) error {
 	var currentSlots *int
 	if o := node.ResourceLimitsOverrides; o != nil && o.RemovalSlots != 0 {
 		slots := o.RemovalSlots
@@ -749,10 +699,7 @@ func (p *TaskProcessor) overrideRemovalSlots(ctx context.Context, r *models.Node
 	return nil
 }
 
-func (p *TaskProcessor) dropRemovalSlotsOverride(ctx context.Context, r *models.Node) error {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) dropRemovalSlotsOverride(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) error {
 	if r.RemovalSlotsOverridden {
 		if slots := r.PrevRemovalSlotsOverride; slots != nil {
 			if err := p.dc.OverrideRemovalSlots(ctx, node.Addr, *slots); err != nil {
@@ -776,9 +723,7 @@ func (p *TaskProcessor) dropRemovalSlotsOverride(ctx context.Context, r *models.
 	return nil
 }
 
-func (p *TaskProcessor) needDisableSchedulerJobs(ctx context.Context, r *models.Node) bool {
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) needDisableSchedulerJobs(ctx context.Context, node *ytsys.Node, r *models.Node) bool {
 	if p.conf.UseMaintenanceAPI {
 		return !containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeDisableSchedulerJobs) &&
 			!r.SchedulerJobsDisabled
@@ -788,16 +733,14 @@ func (p *TaskProcessor) needDisableSchedulerJobs(ctx context.Context, r *models.
 }
 
 // disableSchedulerJobs disables scheduler jobs if they aren't already disabled.
-func (p *TaskProcessor) disableSchedulerJobs(ctx context.Context, r *models.Node) error {
-	task := ctx.Value(taskKey).(*models.Task)
-
+func (p *TaskProcessor) disableSchedulerJobs(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) error {
 	updateInStorage := func() {
 		r.DisableSchedulerJobs()
 		p.l.Info("disabling scheduler jobs in storage", p.nodeLogFields(task, r)...)
 		p.tryUpdateTaskInStorage(ctx, task)
 	}
 
-	if !p.needDisableSchedulerJobs(ctx, r) {
+	if !p.needDisableSchedulerJobs(ctx, node, r) {
 		if !r.SchedulerJobsDisabled {
 			updateInStorage()
 		}
@@ -816,11 +759,8 @@ func (p *TaskProcessor) disableSchedulerJobs(ctx context.Context, r *models.Node
 }
 
 // enableSchedulerJobs enables scheduler jobs if the aren't already enabled.
-func (p *TaskProcessor) enableSchedulerJobs(ctx context.Context, r *models.Node) error {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
-	disabledRecently := time.Time(r.SchedulerJobsDisableTime).After(p.cluster.LastReloadTime())
+func (p *TaskProcessor) enableSchedulerJobs(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) error {
+	disabledRecently := time.Time(r.SchedulerJobsDisableTime).After(p.CachedClusterReloadTime(ctx))
 	needEnable := p.conf.UseMaintenanceAPI && r.SchedulerJobsDisabled ||
 		bool(node.DisableSchedulerJobs) || !bool(node.DisableSchedulerJobs) && disabledRecently
 	// @disable_scheduler_jobs must be unset in the following cases:
@@ -828,7 +768,7 @@ func (p *TaskProcessor) enableSchedulerJobs(ctx context.Context, r *models.Node)
 	// 2. Cluster state is stale and thus attribute value is stale.
 	// 3. UseMaintenanceAPI is true and jobs are disabled by robot-yt-cms.
 	if needEnable {
-		if err := enableSchedulerJobs(ctx, p.dc, r, p.conf.UseMaintenanceAPI); err != nil {
+		if err := enableSchedulerJobs(ctx, p.dc, node, r, p.conf.UseMaintenanceAPI); err != nil {
 			p.l.Error("error enabling scheduler jobs", p.nodeLogFields(task, r, log.Error(err))...)
 			return err
 		}
@@ -843,9 +783,7 @@ func (p *TaskProcessor) enableSchedulerJobs(ctx context.Context, r *models.Node)
 	return nil
 }
 
-func (p *TaskProcessor) needDisableWriteSessions(ctx context.Context, r *models.Node) bool {
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) needDisableWriteSessions(ctx context.Context, node *ytsys.Node, r *models.Node) bool {
 	if p.conf.UseMaintenanceAPI {
 		return !containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeDisableWriteSessions) &&
 			!r.WriteSessionsDisabled
@@ -855,16 +793,14 @@ func (p *TaskProcessor) needDisableWriteSessions(ctx context.Context, r *models.
 }
 
 // disableWriteSessions disables write sessions if the aren't already disabled.
-func (p *TaskProcessor) disableWriteSessions(ctx context.Context, r *models.Node) error {
-	task := ctx.Value(taskKey).(*models.Task)
-
+func (p *TaskProcessor) disableWriteSessions(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) error {
 	updateInStorage := func() {
 		r.DisableWriteSessions()
 		p.l.Info("disabling write sessions in storage", p.nodeLogFields(task, r)...)
 		p.tryUpdateTaskInStorage(ctx, task)
 	}
 
-	if !p.needDisableWriteSessions(ctx, r) {
+	if !p.needDisableWriteSessions(ctx, node, r) {
 		if !r.SchedulerJobsDisabled {
 			updateInStorage()
 		}
@@ -883,11 +819,8 @@ func (p *TaskProcessor) disableWriteSessions(ctx context.Context, r *models.Node
 }
 
 // enableWriteSessions enables write sessions if the aren't already enabled.
-func (p *TaskProcessor) enableWriteSessions(ctx context.Context, r *models.Node) error {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
-	disabledRecently := time.Time(r.WriteSessionsDisableTime).After(p.cluster.LastReloadTime())
+func (p *TaskProcessor) enableWriteSessions(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) error {
+	disabledRecently := time.Time(r.WriteSessionsDisableTime).After(p.CachedClusterReloadTime(ctx))
 	needEnable := p.conf.UseMaintenanceAPI && r.SchedulerJobsDisabled ||
 		bool(node.DisableWriteSessions) || !bool(node.DisableWriteSessions) && disabledRecently
 	// @disable_write_sessions must be unset in the following cases:
@@ -895,7 +828,7 @@ func (p *TaskProcessor) enableWriteSessions(ctx context.Context, r *models.Node)
 	// 2. Cluster state is stale and thus attribute value is stale.
 	// 3. UseMaintenanceAPI is true and sessions are disabled by robot-yt-cms.
 	if needEnable {
-		if err := enableWriteSessions(ctx, p.dc, r, p.conf.UseMaintenanceAPI); err != nil {
+		if err := enableWriteSessions(ctx, p.dc, node, r, p.conf.UseMaintenanceAPI); err != nil {
 			p.l.Error("error enabling write sessions", p.nodeLogFields(task, r, log.Error(err))...)
 			return err
 		}
@@ -910,9 +843,7 @@ func (p *TaskProcessor) enableWriteSessions(ctx context.Context, r *models.Node)
 	return nil
 }
 
-func (p *TaskProcessor) checkResourceLimits(ctx context.Context, r *models.Node) bool {
-	task := ctx.Value(taskKey).(*models.Task)
-
+func (p *TaskProcessor) checkResourceLimits(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) bool {
 	tree, err := p.cluster.GetNodePoolTree(*r.Addr)
 	if err != nil {
 		p.l.Error("unable to get pool tree", p.nodeLogFields(task, r, log.Error(err))...)
@@ -926,17 +857,14 @@ func (p *TaskProcessor) checkResourceLimits(ctx context.Context, r *models.Node)
 	if ytsys.IsGPUPoolTree(tree) {
 		p.l.Debug("node belongs to gpu pool tree -> checking gpu resource limits",
 			p.nodeLogFields(task, r, log.String("pool_tree", tree.Name))...)
-		return p.checkGPULimits(ctx, r, tree)
+		return p.checkGPULimits(ctx, task, node, r, tree)
 	}
 
 	p.l.Debug("checking cpu resource limits", p.nodeLogFields(task, r, log.String("pool_tree", tree.Name))...)
-	return p.checkCPULimits(ctx, r, tree)
+	return p.checkCPULimits(ctx, task, node, r, tree)
 }
 
-func (p *TaskProcessor) checkGPULimits(ctx context.Context, r *models.Node, tree *ytsys.PoolTree) bool {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) checkGPULimits(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node, tree *ytsys.PoolTree) bool {
 	if node.ResourceLimits == nil {
 		p.l.Debug("node is missing resource limits -> waiting", p.nodeLogFields(task, r)...)
 		return false
@@ -973,10 +901,7 @@ func (p *TaskProcessor) checkGPULimits(ctx context.Context, r *models.Node, tree
 	return true
 }
 
-func (p *TaskProcessor) checkCPULimits(ctx context.Context, r *models.Node, tree *ytsys.PoolTree) bool {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) checkCPULimits(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node, tree *ytsys.PoolTree) bool {
 	if node.ResourceLimits == nil {
 		p.l.Debug("node is missing resource limits -> waiting", p.nodeLogFields(task, r)...)
 		return false
@@ -988,7 +913,7 @@ func (p *TaskProcessor) checkCPULimits(ctx context.Context, r *models.Node, tree
 	}
 
 	if p.conf.UseReservePool && r.HasFlavor(ytsys.FlavorExec) {
-		return p.checkReservePoolResources(ctx, r)
+		return p.checkReservePoolResources(ctx, task, node, r)
 	}
 
 	available := tree.AvailableResources.CPU - p.cluster.GetDecommissionStats().CPU[tree.Name]
@@ -1026,10 +951,7 @@ func (p *TaskProcessor) checkCPULimits(ctx context.Context, r *models.Node, tree
 	return true
 }
 
-func (p *TaskProcessor) checkReservePoolResources(ctx context.Context, r *models.Node) bool {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) checkReservePoolResources(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) bool {
 	if !p.reservePool.Allow(ctx, node) {
 		p.l.Debug(
 			"strong_guarantee_resources/cpu of reserve pool less than node limit",
@@ -1056,10 +978,7 @@ func (p *TaskProcessor) checkReservePoolResources(ctx context.Context, r *models
 	return true
 }
 
-func (p *TaskProcessor) checkTabletCellGuarantees(ctx context.Context, r *models.Node) bool {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) checkTabletCellGuarantees(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) bool {
 	cellBundles, err := p.cluster.GetTabletCellBundles(node)
 	if err != nil {
 		p.l.Error("unable to resolve tablet cell bundles", p.nodeLogFields(task, r, log.Error(err))...)
@@ -1103,7 +1022,7 @@ func (p *TaskProcessor) checkTabletCellGuarantees(ctx context.Context, r *models
 		disabled := cellBundles.BalancerDisabled || !bool(*b.BalancerEnabled)
 		if disabled {
 			p.l.Debug("bundle balancer is disabled", p.nodeLogFields(task, r, log.String("bundle", b.Name))...)
-			p.logBundleStats(ctx, r, b)
+			p.logBundleStats(ctx, task, node, r, b)
 
 			freeSlots := p.getAvailableSlots(node, r, b) - freeSlotsUsed
 			if freeSlots <= p.conf.BundleSlotReserve {
@@ -1131,7 +1050,7 @@ func (p *TaskProcessor) checkTabletCellGuarantees(ctx context.Context, r *models
 	return true
 }
 
-func (p *TaskProcessor) fillNodeFlavors(ctx context.Context, t *models.Task, n *ytsys.Node, r *models.Node) error {
+func (p *TaskProcessor) fillNodeFlavors(ctx context.Context, task *models.Task, n *ytsys.Node, r *models.Node) error {
 	if len(n.Flavors) == 0 {
 		return nil
 	}
@@ -1139,74 +1058,74 @@ func (p *TaskProcessor) fillNodeFlavors(ctx context.Context, t *models.Task, n *
 		return nil
 	}
 	r.Flavors = n.Flavors
-	return p.updateTaskInStorage(ctx, t)
+	return p.updateTaskInStorage(ctx, task)
 }
 
-func (p *TaskProcessor) startNodeMaintenance(ctx context.Context, t *models.Task, n *ytsys.Node, r *models.Node) error {
+func (p *TaskProcessor) startNodeMaintenance(ctx context.Context, task *models.Task, n *ytsys.Node, r *models.Node) error {
 	if n.HasMaintenanceAttr() && r.InMaintenance {
-		p.l.Debug("node maintenance request is already started", p.nodeLogFields(t, r)...)
+		p.l.Debug("node maintenance request is already started", p.nodeLogFields(task, r)...)
 		return nil
 	}
 
-	p.l.Debug("starting node maintenance request", p.nodeLogFields(t, r)...)
+	p.l.Debug("starting node maintenance request", p.nodeLogFields(task, r)...)
 
 	req := r.MaintenanceRequest
 	if req == nil {
-		req = p.makeMaintenanceRequest(t)
+		req = p.makeMaintenanceRequest(task)
 	}
 
 	if err := p.dc.SetMaintenance(ctx, n, req); err != nil {
 		p.l.Error("error starting node maintenance request",
-			p.nodeLogFields(t, r, log.Error(err))...)
+			p.nodeLogFields(task, r, log.Error(err))...)
 		p.failedMaintenanceRequestUpdates.Inc()
 		return err
 	}
 
-	p.l.Info("node maintenance request started", p.nodeLogFields(t, r)...)
+	p.l.Info("node maintenance request started", p.nodeLogFields(task, r)...)
 	if r.MaintenanceRequest == nil {
 		r.StartMaintenance(req)
-		p.tryUpdateTaskInStorage(ctx, t)
+		p.tryUpdateTaskInStorage(ctx, task)
 	}
 
 	return nil
 }
 
-func (p *TaskProcessor) finishNodeMaintenance(ctx context.Context, t *models.Task, n *ytsys.Node, r *models.Node) error {
+func (p *TaskProcessor) finishNodeMaintenance(ctx context.Context, task *models.Task, n *ytsys.Node, r *models.Node) error {
 	hasMaintenanceAttr, err := p.dc.HasMaintenanceAttr(ctx, n)
 	if err != nil {
-		p.l.Error("node maintenance status unknown", p.nodeLogFields(t, r, log.Error(err))...)
+		p.l.Error("node maintenance status unknown", p.nodeLogFields(task, r, log.Error(err))...)
 		return err
 	}
 
 	if hasMaintenanceAttr {
-		p.l.Debug("finishing node maintenance", p.nodeLogFields(t, r)...)
+		p.l.Debug("finishing node maintenance", p.nodeLogFields(task, r)...)
 		if err := p.dc.UnsetMaintenance(ctx, n, r.MaintenanceRequest.GetID()); err != nil {
 			p.l.Error("error finishing node maintenance",
-				p.nodeLogFields(t, r, log.Error(err))...)
+				p.nodeLogFields(task, r, log.Error(err))...)
 			p.failedMaintenanceRequestUpdates.Inc()
 			return err
 		}
-		p.l.Info("node maintenance finished", p.nodeLogFields(t, r)...)
+		p.l.Info("node maintenance finished", p.nodeLogFields(task, r)...)
 	}
 
 	if r.InMaintenance {
-		p.l.Info("node maintenance finished in storage", p.nodeLogFields(t, r)...)
+		p.l.Info("node maintenance finished in storage", p.nodeLogFields(task, r)...)
 		r.FinishMaintenance()
-		p.tryUpdateTaskInStorage(ctx, t)
+		p.tryUpdateTaskInStorage(ctx, task)
 	}
 
 	return nil
 }
 
-func (p *TaskProcessor) preNodeAllowHook(ctx context.Context, t *models.Task, n *ytsys.Node, r *models.Node) error {
+func (p *TaskProcessor) preNodeAllowHook(ctx context.Context, task *models.Task, n *ytsys.Node, r *models.Node) error {
 	if n.HasTag(ytsys.GPUTag) && p.conf.EnableGPUTesting {
-		return p.sendGPUToTesting(ctx, t, n, r)
+		return p.sendGPUToTesting(ctx, task, n, r)
 	}
 	return nil
 }
 
 // sendGPUToTesting removes gpu_prod tag.
-func (p *TaskProcessor) sendGPUToTesting(ctx context.Context, t *models.Task, n *ytsys.Node, r *models.Node) error {
+func (p *TaskProcessor) sendGPUToTesting(ctx context.Context, task *models.Task, n *ytsys.Node, r *models.Node) error {
 	if !n.HasTag(ytsys.GPUTag) || !n.HasTag(ytsys.GPUProdTag) {
 		return nil
 	}
@@ -1220,13 +1139,13 @@ func (p *TaskProcessor) sendGPUToTesting(ctx context.Context, t *models.Task, n 
 		return nil
 	}
 
-	p.l.Debug("removing gpu prod tag", p.nodeLogFields(t, r)...)
+	p.l.Debug("removing gpu prod tag", p.nodeLogFields(task, r)...)
 	err := p.dc.RemoveTag(ctx, n.GetCypressPath(), ytsys.GPUProdTag)
 	if err != nil {
 		p.l.Error("error removing gpu prod tag",
-			p.nodeLogFields(t, r, log.Error(err))...)
+			p.nodeLogFields(task, r, log.Error(err))...)
 	} else {
-		p.l.Info("removed gpu prod tag", p.nodeLogFields(t, r)...)
+		p.l.Info("removed gpu prod tag", p.nodeLogFields(task, r)...)
 	}
 
 	return err
@@ -1243,10 +1162,7 @@ func (p *TaskProcessor) getAvailableSlots(node *ytsys.Node, r *models.Node, b *y
 	return b.GetFreeSlots() - nodeSlots - p.cluster.GetDecommissionStats().Slots[b.Name]
 }
 
-func (p *TaskProcessor) logBundleStats(ctx context.Context, r *models.Node, b *ytsys.TabletCellBundle) {
-	task := ctx.Value(taskKey).(*models.Task)
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func (p *TaskProcessor) logBundleStats(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node, b *ytsys.TabletCellBundle) {
 	freeSlots := p.getAvailableSlots(node, r, b)
 	p.l.Debug("bundle stats", p.nodeLogFields(task, r,
 		log.String("bundle", b.Name),

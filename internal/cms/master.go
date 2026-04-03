@@ -28,13 +28,12 @@ type StartrekClient interface {
 	LinkTicket(ctx context.Context, source, target startrek.TicketKey, r startrek.TicketRelationship) error
 }
 
-func (p *TaskProcessor) processMaster(ctx context.Context, r *models.Master) {
-	task := ctx.Value(taskKey).(*models.Task)
+func (p *TaskProcessor) processMaster(ctx context.Context, task *models.Task, r *models.Master) {
 	p.l.Debug("processing master", p.masterLogFields(task, r)...)
 
 	if task.DeletionRequested {
 		p.l.Debug("walle deleted task -> setting master role as finished", p.masterLogFields(task, r)...)
-		p.activateMaster(ctx, r)
+		p.activateMaster(ctx, task, r)
 		return
 	}
 
@@ -212,9 +211,7 @@ func (p *TaskProcessor) startProcessingTicket(ctx context.Context, task *models.
 	p.l.Debug("updated status of the startrek ticket for master", p.masterLogFields(task, r)...)
 }
 
-func (p *TaskProcessor) activateMaster(ctx context.Context, r *models.Master) {
-	task := ctx.Value(taskKey).(*models.Task)
-
+func (p *TaskProcessor) activateMaster(ctx context.Context, task *models.Task, r *models.Master) {
 	master, ok := p.resolveMaster(task, r)
 	if !ok {
 		p.l.Error("unable to find master", p.masterLogFields(task, r)...)

@@ -9,13 +9,7 @@ import (
 	"go.ytsaurus.tech/yt/go/ytsys"
 )
 
-type httpProxyKeyType int
-
-// httpProxyKey is a key used to access cached http proxy cluster state in ctx.
-var httpProxyKey httpProxyKeyType
-
-func (p *TaskProcessor) processHTTPProxy(ctx context.Context, r *models.HTTPProxy) {
-	task := ctx.Value(taskKey).(*models.Task)
+func (p *TaskProcessor) processHTTPProxy(ctx context.Context, task *models.Task, r *models.HTTPProxy) {
 	p.l.Debug("processing http proxy", p.httpProxyLogFields(task, r)...)
 
 	proxy, ok := p.resolveHTTPProxy(task, r)
@@ -28,17 +22,15 @@ func (p *TaskProcessor) processHTTPProxy(ctx context.Context, r *models.HTTPProx
 		}
 		return
 	}
-	proxyCtx := context.WithValue(ctx, httpProxyKey, proxy)
-
 	if task.DeletionRequested {
 		p.l.Debug("deletion requested -> activating http proxy", p.httpProxyLogFields(task, r)...)
-		p.activateHTTPProxy(proxyCtx, task, proxy, r)
+		p.activateHTTPProxy(ctx, task, proxy, r)
 		return
 	}
 
 	switch r.State {
 	case models.HTTPProxyStateAccepted:
-		p.processPendingHTTPProxy(proxyCtx, task, proxy, r)
+		p.processPendingHTTPProxy(ctx, task, proxy, r)
 	case models.HTTPProxyStateProcessed:
 	default:
 		p.l.Error("unexpected http proxy state", log.String("state", string(r.State)))
@@ -117,7 +109,7 @@ func (p *TaskProcessor) unbanHTTPProxy(
 	proxy *ytsys.HTTPProxy,
 	r *models.HTTPProxy,
 ) error {
-	bannedRecently := time.Time(r.BanTime).After(p.cluster.LastReloadTime())
+	bannedRecently := time.Time(r.BanTime).After(p.CachedClusterReloadTime(ctx))
 	// Proxy must be unbanned in both of the following cases:
 	// 1. Cluster state is fresh and proxy is banned.
 	// 2. Cluster state is stale and thus ban status is stale.

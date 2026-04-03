@@ -675,6 +675,7 @@ func (p *TaskProcessor) run(ctx context.Context) error {
 			if err := p.cluster.Err(); err != nil {
 				p.l.Debug("last cluster poll failed; limiting tasks processing", log.Error(err))
 			}
+			ctx = WithLastClusterReloadTime(ctx, p.cluster)
 			if err := p.updateTasks(ctx); err != nil {
 				p.l.Error("tasks update failed", log.Error(err))
 				p.failedTaskUpdateLoops.Inc()
@@ -1179,37 +1180,32 @@ func (p *TaskProcessor) processConfirmationRequests(ctx context.Context, tasks [
 }
 
 // doManualConfirmation performs actual confirmation that updates task status in storage.
-func (p *TaskProcessor) doManualConfirmation(ctx context.Context, task *models.Task) error {
-	if task.ProcessingState == models.StateConfirmedManually && task.WalleStatus == walle.StatusOK {
-		p.l.Debug("task is already confirmed", log.String("task_id", string(task.ID)))
+func (p *TaskProcessor) doManualConfirmation(ctx context.Context, t *models.Task) error {
+	if t.ProcessingState == models.StateConfirmedManually && t.WalleStatus == walle.StatusOK {
+		p.l.Debug("task is already confirmed", log.String("task_id", string(t.ID)))
 		return nil
 	}
 
-	p.l.Debug("performing manual task confirmation", log.Any("task", task))
-	task.ConfirmManually(models.DecisionMaker(task.ConfirmationRequestedBy))
-	if err := p.storage.Update(ctx, task); err != nil {
+	p.l.Debug("performing manual task confirmation", log.Any("task", t))
+	t.ConfirmManually(models.DecisionMaker(t.ConfirmationRequestedBy))
+	if err := p.storage.Update(ctx, t); err != nil {
 		return err
 	}
 
-	p.l.Debug("editing status of related tickets", log.Any("task", task))
-	for _, m := range task.GetMasters() {
-		p.ensureMasterMaintenance(ctx, task, m)
-		p.startProcessingTicket(ctx, task, m)
+	p.l.Debug("editing status of related tickets", log.Any("task", t))
+	for _, m := range t.GetMasters() {
+		p.ensureMasterMaintenance(ctx, t, m)
+		p.startProcessingTicket(ctx, t, m)
 	}
 
 	return nil
 }
 
-type taskKeyType int
-
-// taskKey is a key used to access task in ctx.
-var taskKey taskKeyType
-
 func (p *TaskProcessor) processTask(ctx context.Context, t *models.Task) {
 	p.l.Debug("processing task", log.Any("task", t))
 
 	// Check that latest cluster state update was after the task was created.
-	clusterReloadTime := p.cluster.LastReloadTime()
+	clusterReloadTime := p.CachedClusterReloadTime(ctx)
 	if time.Time(t.CreatedAt).After(clusterReloadTime) {
 		p.l.Error("skipping task due to stale cluster snapshot",
 			log.String("task_id", string(t.ID)),
@@ -1221,9 +1217,8 @@ func (p *TaskProcessor) processTask(ctx context.Context, t *models.Task) {
 	p.l.Debug("task was created before last successful cluster state update -> proceeding to precessing",
 		log.String("task_id", string(t.ID)))
 
-	taskCtx := context.WithValue(ctx, taskKey, t)
 	for _, h := range t.Hosts {
-		p.processHost(taskCtx, t.HostStates[h])
+		p.processHost(ctx, t, t.HostStates[h])
 	}
 
 	if desc := p.generateWalleDescription(t); t.WalleStatusDescription != desc {
@@ -1281,28 +1276,19 @@ func (p *TaskProcessor) processTask(ctx context.Context, t *models.Task) {
 	}
 }
 
-type hostKeyType int
-
-// hostKey is a key used to access host in ctx.
-var hostKey hostKeyType
-
-func (p *TaskProcessor) processHost(ctx context.Context, h *models.Host) {
-	task := ctx.Value(taskKey).(*models.Task)
-
+func (p *TaskProcessor) processHost(ctx context.Context, t *models.Task, h *models.Host) {
 	p.l.Debug("processing host", log.Any("host", h))
 
-	p.updateRoles(ctx, task, h)
-	p.annotateHost(ctx, task, h)
-
-	hostCtx := context.WithValue(ctx, hostKey, h)
+	p.updateRoles(ctx, t, h)
+	p.annotateHost(ctx, t, h)
 
 	if len(h.Roles) == 0 {
-		p.processNotYTHost(ctx, h)
+		p.processNotYTHost(ctx, t, h)
 		return
 	}
 
 	for _, r := range h.Roles {
-		p.processRole(hostCtx, r)
+		p.processRole(ctx, t, r)
 	}
 
 	if h.State == models.HostStateFinished {
@@ -1314,14 +1300,13 @@ func (p *TaskProcessor) processHost(ctx context.Context, h *models.Host) {
 		h.SetFinished()
 
 		p.l.Info("all host roles finished",
-			log.Any("task", task), log.Any("host", h))
+			log.Any("task", t), log.Any("host", h))
 
-		task := ctx.Value(taskKey).(*models.Task)
-		p.tryUpdateTaskInStorage(ctx, task)
+		p.tryUpdateTaskInStorage(ctx, t)
 		return
 	} else {
 		p.l.Debug("not all host roles are finished",
-			log.Any("task", task), log.Any("host", h))
+			log.Any("task", t), log.Any("host", h))
 	}
 
 	if h.State == models.HostStateProcessed {
@@ -1333,14 +1318,13 @@ func (p *TaskProcessor) processHost(ctx context.Context, h *models.Host) {
 		h.SetProcessed()
 
 		p.l.Info("all host roles processed",
-			log.Any("task", task), log.Any("host", h))
+			log.Any("task", t), log.Any("host", h))
 
-		task := ctx.Value(taskKey).(*models.Task)
-		p.tryUpdateTaskInStorage(ctx, task)
+		p.tryUpdateTaskInStorage(ctx, t)
 		return
 	} else {
 		p.l.Debug("not all host roles are processed",
-			log.Any("task", task), log.Any("host", h))
+			log.Any("task", t), log.Any("host", h))
 	}
 
 	if h.State == models.HostStateDecommissioned {
@@ -1352,13 +1336,12 @@ func (p *TaskProcessor) processHost(ctx context.Context, h *models.Host) {
 		h.SetDecommissioned()
 
 		p.l.Info("all host roles decommissioned",
-			log.Any("task", task), log.Any("host", h))
+			log.Any("task", t), log.Any("host", h))
 
-		task := ctx.Value(taskKey).(*models.Task)
-		p.tryUpdateTaskInStorage(ctx, task)
+		p.tryUpdateTaskInStorage(ctx, t)
 	} else {
 		p.l.Debug("not all host roles are decommissioned",
-			log.Any("task", task), log.Any("host", h))
+			log.Any("task", t), log.Any("host", h))
 	}
 }
 
@@ -1444,15 +1427,13 @@ func (p *TaskProcessor) annotateHost(ctx context.Context, t *models.Task, h *mod
 	}
 }
 
-func (p *TaskProcessor) processNotYTHost(ctx context.Context, h *models.Host) {
-	task := ctx.Value(taskKey).(*models.Task)
+func (p *TaskProcessor) processNotYTHost(ctx context.Context, t *models.Task, h *models.Host) {
+	p.l.Debug("processing non-YT host", log.String("task_id", string(t.ID)), log.Any("host", h))
 
-	p.l.Debug("processing non-YT host", log.String("task_id", string(task.ID)), log.Any("host", h))
-
-	if task.DeletionRequested {
+	if t.DeletionRequested {
 		h.SetFinished()
 		p.l.Debug("finishing processing of non-YT host", log.String("host", h.Host))
-		p.tryUpdateTaskInStorage(ctx, task)
+		p.tryUpdateTaskInStorage(ctx, t)
 		return
 	}
 
@@ -1462,47 +1443,47 @@ func (p *TaskProcessor) processNotYTHost(ctx context.Context, h *models.Host) {
 
 	if !p.colocationLimits.Allow(ctx, h) {
 		p.l.Debug("can not allow non-YT host due to rate limit",
-			log.String("task_id", string(task.ID)), log.Any("host", h))
+			log.String("task_id", string(t.ID)), log.Any("host", h))
 		return
 	}
 
 	p.l.Debug("allowing walle to take non-YT host", log.String("host", h.Host))
 
 	h.AllowAsForeign()
-	p.tryUpdateTaskInStorage(ctx, task)
+	p.tryUpdateTaskInStorage(ctx, t)
 }
 
-func (p *TaskProcessor) tryUpdateTaskInStorage(ctx context.Context, task *models.Task) {
-	_ = p.updateTaskInStorage(ctx, task)
+func (p *TaskProcessor) tryUpdateTaskInStorage(ctx context.Context, t *models.Task) {
+	_ = p.updateTaskInStorage(ctx, t)
 }
 
-func (p *TaskProcessor) updateTaskInStorage(ctx context.Context, task *models.Task) error {
-	if err := p.storage.Update(ctx, task); err != nil {
+func (p *TaskProcessor) updateTaskInStorage(ctx context.Context, t *models.Task) error {
+	if err := p.storage.Update(ctx, t); err != nil {
 		p.l.Error("error updating task",
-			log.String("task_id", string(task.ID)), log.Error(err))
+			log.String("task_id", string(t.ID)), log.Error(err))
 		p.storageErrors.Inc()
 		return err
 	}
-	p.l.Debug("successfully updated task in storage", log.Any("task", task))
+	p.l.Debug("successfully updated task in storage", log.Any("task", t))
 	return nil
 }
 
-func (p *TaskProcessor) processRole(ctx context.Context, c *models.Component) {
+func (p *TaskProcessor) processRole(ctx context.Context, t *models.Task, c *models.Component) {
 	switch role := c.Role.(type) {
 	case *models.Master:
-		p.processMaster(ctx, role)
+		p.processMaster(ctx, t, role)
 	case *models.Scheduler:
-		p.processScheduler(ctx, role)
+		p.processScheduler(ctx, t, role)
 	case *models.ControllerAgent:
-		p.processControllerAgent(ctx, role)
+		p.processControllerAgent(ctx, t, role)
 	case *models.QueueAgent:
-		p.processQueueAgent(ctx, role)
+		p.processQueueAgent(ctx, t, role)
 	case *models.HTTPProxy:
-		p.processHTTPProxy(ctx, role)
+		p.processHTTPProxy(ctx, t, role)
 	case *models.RPCProxy:
-		p.processRPCProxy(ctx, role)
+		p.processRPCProxy(ctx, t, role)
 	case *models.Node:
-		p.processNode(ctx, role)
+		p.processNode(ctx, t, role)
 	}
 }
 
@@ -1544,4 +1525,27 @@ func (p *TaskProcessor) generateWalleDescription(t *models.Task) string {
 	}
 
 	return strings.Join(desc, " | ")
+}
+
+type clusterReloadTimeKeyType string
+
+// clusterReloadTimeKey is a key used to access cached cluster reload time in ctx.
+var clusterReloadTimeKey clusterReloadTimeKeyType
+
+// WithLastClusterReloadTime creates new ctx with cached cluster reload time.
+//
+// It must be updated every time when any task starts processing. Cached time prevents scenario
+// when we have old role data (for example, from function parameters),
+// but p.cluster.LastReloadTime() claims that data was updated recently.
+func WithLastClusterReloadTime(ctx context.Context, c models.Cluster) context.Context {
+	return context.WithValue(ctx, clusterReloadTimeKey, c.LastReloadTime())
+}
+
+// CachedClusterReloadTime returns cached cluster reload time in ctx. If it is nil, returns p.cluster.LastReloadTime().
+func (p *TaskProcessor) CachedClusterReloadTime(ctx context.Context) time.Time {
+	t, ok := ctx.Value(clusterReloadTimeKey).(time.Time)
+	if !ok {
+		return p.cluster.LastReloadTime()
+	}
+	return t
 }

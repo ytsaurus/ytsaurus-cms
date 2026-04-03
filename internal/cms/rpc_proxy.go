@@ -9,13 +9,7 @@ import (
 	"go.ytsaurus.tech/yt/go/ytsys"
 )
 
-type rpcProxyKeyType int
-
-// rpcProxyKey is a key used to access cached rpc proxy cluster state in ctx.
-var rpcProxyKey rpcProxyKeyType
-
-func (p *TaskProcessor) processRPCProxy(ctx context.Context, r *models.RPCProxy) {
-	task := ctx.Value(taskKey).(*models.Task)
+func (p *TaskProcessor) processRPCProxy(ctx context.Context, task *models.Task, r *models.RPCProxy) {
 	p.l.Debug("processing rpc proxy", p.rpcProxyLogFields(task, r)...)
 
 	proxy, ok := p.resolveRPCProxy(task, r)
@@ -28,17 +22,15 @@ func (p *TaskProcessor) processRPCProxy(ctx context.Context, r *models.RPCProxy)
 		}
 		return
 	}
-	proxyCtx := context.WithValue(ctx, rpcProxyKey, proxy)
-
 	if task.DeletionRequested {
 		p.l.Debug("deletion requested -> activating rpc proxy", p.rpcProxyLogFields(task, r)...)
-		p.activateRPCProxy(proxyCtx, task, proxy, r)
+		p.activateRPCProxy(ctx, task, proxy, r)
 		return
 	}
 
 	switch r.State {
 	case models.RPCProxyStateAccepted:
-		p.processPendingRPCProxy(proxyCtx, task, proxy, r)
+		p.processPendingRPCProxy(ctx, task, proxy, r)
 	case models.RPCProxyStateProcessed:
 	default:
 		p.l.Error("unexpected rpc proxy state", log.String("state", string(r.State)))
@@ -191,7 +183,7 @@ func (p *TaskProcessor) unbanRPCProxy(
 	proxy *ytsys.RPCProxy,
 	r *models.RPCProxy,
 ) error {
-	bannedRecently := time.Time(r.BanTime).After(p.cluster.LastReloadTime())
+	bannedRecently := time.Time(r.BanTime).After(p.CachedClusterReloadTime(ctx))
 	// Proxy must be unbanned in both of the following cases:
 	// 1. Cluster state is fresh and proxy is banned.
 	// 2. Cluster state is stale and thus ban status is stale.

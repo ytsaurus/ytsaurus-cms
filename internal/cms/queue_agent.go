@@ -10,28 +10,25 @@ import (
 	"go.ytsaurus.tech/yt/go/ytsys"
 )
 
-func (p *TaskProcessor) processQueueAgent(ctx context.Context, r *models.QueueAgent) {
-	task := ctx.Value(taskKey).(*models.Task)
+func (p *TaskProcessor) processQueueAgent(ctx context.Context, task *models.Task, r *models.QueueAgent) {
 	p.l.Debug("processing queue agent", p.queueAgentLogFields(task, r)...)
 
 	if task.DeletionRequested {
 		p.l.Debug("deletion requested -> activating queue agent", p.queueAgentLogFields(task, r)...)
-		p.activateQueueAgent(ctx, r)
+		p.activateQueueAgent(ctx, task, r)
 		return
 	}
 
 	switch r.State {
 	case models.QueueAgentStateAccepted:
-		p.processPendingQueueAgent(ctx, r)
+		p.processPendingQueueAgent(ctx, task, r)
 	case models.QueueAgentStateProcessed:
 	default:
 		p.l.Error("unexpected queue agent state", log.String("state", string(r.State)))
 	}
 }
 
-func (p *TaskProcessor) processPendingQueueAgent(ctx context.Context, r *models.QueueAgent) {
-	task := ctx.Value(taskKey).(*models.Task)
-
+func (p *TaskProcessor) processPendingQueueAgent(ctx context.Context, task *models.Task, r *models.QueueAgent) {
 	_, ok := p.resolveQueueAgent(task, r)
 	if !ok {
 		return
@@ -67,12 +64,10 @@ func (p *TaskProcessor) processPendingQueueAgent(ctx context.Context, r *models.
 
 	p.l.Info("all other queue agents are alive -> proceeding to decommission",
 		p.queueAgentLogFields(task, r)...)
-	p.decommissionQueueAgent(ctx, r)
+	p.decommissionQueueAgent(ctx, task, r)
 }
 
-func (p *TaskProcessor) decommissionQueueAgent(ctx context.Context, r *models.QueueAgent) {
-	task := ctx.Value(taskKey).(*models.Task)
-
+func (p *TaskProcessor) decommissionQueueAgent(ctx context.Context, task *models.Task, r *models.QueueAgent) {
 	agent, ok := p.resolveQueueAgent(task, r)
 	if !ok {
 		p.l.Error("unable to find queue agent", p.queueAgentLogFields(task, r)...)
@@ -119,9 +114,7 @@ func (p *TaskProcessor) decommissionQueueAgent(ctx context.Context, r *models.Qu
 	p.tryUpdateTaskInStorage(ctx, task)
 }
 
-func (p *TaskProcessor) activateQueueAgent(ctx context.Context, r *models.QueueAgent) {
-	task := ctx.Value(taskKey).(*models.Task)
-
+func (p *TaskProcessor) activateQueueAgent(ctx context.Context, task *models.Task, r *models.QueueAgent) {
 	agent, ok := p.resolveQueueAgent(task, r)
 	if !ok {
 		p.l.Error("unable to find queue agent", p.queueAgentLogFields(task, r)...)
@@ -135,7 +128,7 @@ func (p *TaskProcessor) activateQueueAgent(ctx context.Context, r *models.QueueA
 		permanentBan = true
 	}
 
-	bannedRecently := time.Time(r.BanTime).After(p.cluster.LastReloadTime())
+	bannedRecently := time.Time(r.BanTime).After(p.CachedClusterReloadTime(ctx))
 	// Queue agent must be unbanned if ban message does not contain
 	// permanentBanSubstr and one of the following cases is true:
 	// 1. Cluster state is fresh and queue agent is banned.

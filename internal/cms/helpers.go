@@ -39,12 +39,11 @@ func containCMSMaintenanceRequest(reqs ytsys.SystemMaintenanceRequestMap, t yt.M
 func removeMaintenances(
 	ctx context.Context,
 	dc DiscoveryClient,
+	node *ytsys.Node,
 	addr *ytsys.Addr,
 	component yt.MaintenanceComponent,
 	typ yt.MaintenanceType,
 ) error {
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
 	guids := make([]yt.MaintenanceID, 0)
 	for id, req := range node.MaintenanceRequests {
 		if req.Type == typ && strings.HasPrefix(req.Comment, directMaintenanceComment) && req.User != robotShiva {
@@ -69,9 +68,9 @@ func removeMaintenances(
 	return err
 }
 
-func enableSchedulerJobs(ctx context.Context, dc DiscoveryClient, r *models.Node, useMaintenanceAPI bool) error {
+func enableSchedulerJobs(ctx context.Context, dc DiscoveryClient, node *ytsys.Node, r *models.Node, useMaintenanceAPI bool) error {
 	if useMaintenanceAPI {
-		return removeMaintenances(ctx, dc, r.Addr, yt.MaintenanceComponentClusterNode, yt.MaintenanceTypeDisableSchedulerJobs)
+		return removeMaintenances(ctx, dc, node, r.Addr, yt.MaintenanceComponentClusterNode, yt.MaintenanceTypeDisableSchedulerJobs)
 	}
 	return dc.EnableSchedulerJobs(ctx, r.Addr)
 }
@@ -91,9 +90,9 @@ func disableSchedulerJobs(ctx context.Context, dc DiscoveryClient, r *models.Nod
 	return dc.DisableSchedulerJobs(ctx, r.Addr)
 }
 
-func enableWriteSessions(ctx context.Context, dc DiscoveryClient, r *models.Node, useMaintenanceAPI bool) error {
+func enableWriteSessions(ctx context.Context, dc DiscoveryClient, node *ytsys.Node, r *models.Node, useMaintenanceAPI bool) error {
 	if useMaintenanceAPI {
-		return removeMaintenances(ctx, dc, r.Addr, yt.MaintenanceComponentClusterNode, yt.MaintenanceTypeDisableWriteSessions)
+		return removeMaintenances(ctx, dc, node, r.Addr, yt.MaintenanceComponentClusterNode, yt.MaintenanceTypeDisableWriteSessions)
 	}
 	return dc.EnableWriteSessions(ctx, r.Addr)
 }
@@ -139,11 +138,9 @@ func banNode(ctx context.Context, dc DiscoveryClient, node *ytsys.Node, useMaint
 	return dc.Ban(ctx, node, banMsg)
 }
 
-func unmarkNodeDecommissioned(ctx context.Context, dc DiscoveryClient, useMaintenanceAPI bool) error {
-	node := ctx.Value(nodeKey).(*ytsys.Node)
-
+func unmarkNodeDecommissioned(ctx context.Context, dc DiscoveryClient, node *ytsys.Node, useMaintenanceAPI bool) error {
 	if useMaintenanceAPI {
-		return removeMaintenances(ctx, dc, node.Addr, yt.MaintenanceComponentClusterNode, yt.MaintenanceTypeDecommission)
+		return removeMaintenances(ctx, dc, node, node.Addr, yt.MaintenanceComponentClusterNode, yt.MaintenanceTypeDecommission)
 	}
 	return dc.UnmarkNodeDecommissioned(ctx, node.Addr)
 }

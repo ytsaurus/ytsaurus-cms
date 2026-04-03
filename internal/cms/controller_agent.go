@@ -8,28 +8,25 @@ import (
 	"go.ytsaurus.tech/yt/go/ytsys"
 )
 
-func (p *TaskProcessor) processControllerAgent(ctx context.Context, r *models.ControllerAgent) {
-	task := ctx.Value(taskKey).(*models.Task)
+func (p *TaskProcessor) processControllerAgent(ctx context.Context, task *models.Task, r *models.ControllerAgent) {
 	p.l.Debug("processing controller agent", p.controllerAgentLogFields(task, r)...)
 
 	if task.DeletionRequested {
 		p.l.Debug("deletion requested -> activating controller agent", p.controllerAgentLogFields(task, r)...)
-		p.activateControllerAgent(ctx, r)
+		p.activateControllerAgent(ctx, task, r)
 		return
 	}
 
 	switch r.State {
 	case models.ControllerAgentStateAccepted:
-		p.processPendingControllerAgent(ctx, r)
+		p.processPendingControllerAgent(ctx, task, r)
 	case models.ControllerAgentStateProcessed:
 	default:
 		p.l.Error("unexpected controller agent state", log.String("state", string(r.State)))
 	}
 }
 
-func (p *TaskProcessor) processPendingControllerAgent(ctx context.Context, r *models.ControllerAgent) {
-	task := ctx.Value(taskKey).(*models.Task)
-
+func (p *TaskProcessor) processPendingControllerAgent(ctx context.Context, task *models.Task, r *models.ControllerAgent) {
 	agent, ok := p.resolveControllerAgent(task, r)
 	if !ok {
 		return
@@ -71,12 +68,10 @@ func (p *TaskProcessor) processPendingControllerAgent(ctx context.Context, r *mo
 
 	p.l.Info("all other controller agents are alive -> proceeding to decommission",
 		p.controllerAgentLogFields(task, r)...)
-	p.decommissionControllerAgent(ctx, r)
+	p.decommissionControllerAgent(ctx, task, r)
 }
 
-func (p *TaskProcessor) decommissionControllerAgent(ctx context.Context, r *models.ControllerAgent) {
-	task := ctx.Value(taskKey).(*models.Task)
-
+func (p *TaskProcessor) decommissionControllerAgent(ctx context.Context, task *models.Task, r *models.ControllerAgent) {
 	agent, ok := p.resolveControllerAgent(task, r)
 	if !ok {
 		p.l.Error("unable to find controller agent", p.controllerAgentLogFields(task, r)...)
@@ -108,9 +103,7 @@ func (p *TaskProcessor) decommissionControllerAgent(ctx context.Context, r *mode
 	p.tryUpdateTaskInStorage(ctx, task)
 }
 
-func (p *TaskProcessor) activateControllerAgent(ctx context.Context, r *models.ControllerAgent) {
-	task := ctx.Value(taskKey).(*models.Task)
-
+func (p *TaskProcessor) activateControllerAgent(ctx context.Context, task *models.Task, r *models.ControllerAgent) {
 	agent, ok := p.resolveControllerAgent(task, r)
 	if !ok {
 		p.l.Error("unable to find controller agent", p.controllerAgentLogFields(task, r)...)
