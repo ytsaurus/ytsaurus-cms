@@ -274,6 +274,8 @@ type YTRole string
 
 const (
 	YTRoleNode            YTRole = "ytnode"
+	YTRoleDatNode         YTRole = "ytdatnode"
+	YTRoleExeNode         YTRole = "ytexenode"
 	YTRoleHTTPProxy       YTRole = "ytproxy"
 	YTRoleRPCProxy        YTRole = "ytrpcproxy"
 	YTRoleControllerAgent YTRole = "ytcontrolleragent"
@@ -285,7 +287,7 @@ const (
 func (r YTRole) Compare(cr ytsys.ClusterRole) bool {
 	switch cr {
 	case ytsys.RoleNode:
-		return r == YTRoleNode
+		return r == YTRoleNode || r == YTRoleDatNode || r == YTRoleExeNode
 	case ytsys.RoleHTTPProxy:
 		return r == YTRoleHTTPProxy
 	case ytsys.RoleRPCProxy:
