@@ -248,8 +248,7 @@ func (p *TaskProcessor) checkNodeConstraints(ctx context.Context, task *models.T
 
 func (p *TaskProcessor) needBanNode(ctx context.Context, node *ytsys.Node, r *models.Node) bool {
 	if p.conf.UseMaintenanceAPI {
-		return !containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeBan) &&
-			!r.Banned
+		return !containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeBan)
 	}
 
 	return !bool(node.Banned)
@@ -613,8 +612,7 @@ func (p *TaskProcessor) activateNode(ctx context.Context, task *models.Task, nod
 
 func (p *TaskProcessor) needDecommission(ctx context.Context, node *ytsys.Node, r *models.Node) bool {
 	if p.conf.UseMaintenanceAPI {
-		return !containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeDecommission) &&
-			!r.DecommissionInProgress
+		return !containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeDecommission)
 	}
 
 	return !bool(node.Decommissioned)
@@ -725,8 +723,7 @@ func (p *TaskProcessor) dropRemovalSlotsOverride(ctx context.Context, task *mode
 
 func (p *TaskProcessor) needDisableSchedulerJobs(ctx context.Context, node *ytsys.Node, r *models.Node) bool {
 	if p.conf.UseMaintenanceAPI {
-		return !containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeDisableSchedulerJobs) &&
-			!r.SchedulerJobsDisabled
+		return !containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeDisableSchedulerJobs)
 	}
 
 	return !bool(node.DisableSchedulerJobs)
@@ -785,8 +782,7 @@ func (p *TaskProcessor) enableSchedulerJobs(ctx context.Context, task *models.Ta
 
 func (p *TaskProcessor) needDisableWriteSessions(ctx context.Context, node *ytsys.Node, r *models.Node) bool {
 	if p.conf.UseMaintenanceAPI {
-		return !containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeDisableWriteSessions) &&
-			!r.WriteSessionsDisabled
+		return !containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeDisableWriteSessions)
 	}
 
 	return !bool(node.DisableWriteSessions)
@@ -801,7 +797,7 @@ func (p *TaskProcessor) disableWriteSessions(ctx context.Context, task *models.T
 	}
 
 	if !p.needDisableWriteSessions(ctx, node, r) {
-		if !r.SchedulerJobsDisabled {
+		if !r.WriteSessionsDisabled {
 			updateInStorage()
 		}
 		return nil
