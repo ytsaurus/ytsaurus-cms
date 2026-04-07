@@ -61,7 +61,6 @@ func (a *App) Run(ctx context.Context) error {
 	})
 
 	r := chi.NewMux()
-	r.Use(httpmetrics.New(a.registry.WithPrefix("http")))
 	r.Use(timeout(a.conf.HTTPHandlerTimeout))
 	r.Use(requestLog(a.l))
 	r.Use(CORS())
@@ -87,7 +86,7 @@ func (a *App) Run(ctx context.Context) error {
 		s := NewSystem(c, yc, d, l)
 		systemMetrics := a.registry.WithTags(map[string]string{"yt-cluster": c.Proxy})
 		s.RegisterMetrics(systemMetrics)
-		s.RegisterAPI(r)
+		s.RegisterAPI(r.With(httpmetrics.New(systemMetrics.WithPrefix("http"))))
 
 		g.Go(func() error {
 			return s.Run(gctx)
