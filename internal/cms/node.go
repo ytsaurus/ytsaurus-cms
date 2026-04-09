@@ -247,11 +247,11 @@ func (p *TaskProcessor) checkNodeConstraints(ctx context.Context, task *models.T
 }
 
 func (p *TaskProcessor) needBanNode(ctx context.Context, node *ytsys.Node, r *models.Node) bool {
-	if p.conf.UseMaintenanceAPI {
-		return !containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeBan)
-	}
+	bannedRecently := time.Time(r.BanTime).After(p.CachedClusterReloadTime(ctx))
+	bannedAtCluster := !p.conf.UseMaintenanceAPI && bool(node.Banned) ||
+		p.conf.UseMaintenanceAPI && containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeBan)
 
-	return !bool(node.Banned)
+	return !bannedAtCluster && (!r.Banned || !bannedRecently)
 }
 
 // decommissionNode bans node and allows walle to take the role after some period.
@@ -611,11 +611,11 @@ func (p *TaskProcessor) activateNode(ctx context.Context, task *models.Task, nod
 }
 
 func (p *TaskProcessor) needDecommission(ctx context.Context, node *ytsys.Node, r *models.Node) bool {
-	if p.conf.UseMaintenanceAPI {
-		return !containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeDecommission)
-	}
+	decommissionedRecently := time.Time(r.MarkedDecommissionedTime).After(p.CachedClusterReloadTime(ctx))
+	decommissionedAtCluster := !p.conf.UseMaintenanceAPI && bool(node.Decommissioned) ||
+		p.conf.UseMaintenanceAPI && containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeDecommission)
 
-	return !bool(node.Decommissioned)
+	return !decommissionedAtCluster && (!r.DecommissionInProgress || !decommissionedRecently)
 }
 
 // startChunkDecommission stats node decommission if it isn'task already decommissioned.
@@ -722,11 +722,11 @@ func (p *TaskProcessor) dropRemovalSlotsOverride(ctx context.Context, task *mode
 }
 
 func (p *TaskProcessor) needDisableSchedulerJobs(ctx context.Context, node *ytsys.Node, r *models.Node) bool {
-	if p.conf.UseMaintenanceAPI {
-		return !containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeDisableSchedulerJobs)
-	}
+	disabledRecently := time.Time(r.SchedulerJobsDisableTime).After(p.CachedClusterReloadTime(ctx))
+	disabledAtCluster := !p.conf.UseMaintenanceAPI && bool(node.DisableSchedulerJobs) ||
+		p.conf.UseMaintenanceAPI && containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeDisableSchedulerJobs)
 
-	return !bool(node.DisableSchedulerJobs)
+	return !disabledAtCluster && (!r.SchedulerJobsDisabled || !disabledRecently)
 }
 
 // disableSchedulerJobs disables scheduler jobs if they aren't already disabled.
@@ -781,11 +781,11 @@ func (p *TaskProcessor) enableSchedulerJobs(ctx context.Context, task *models.Ta
 }
 
 func (p *TaskProcessor) needDisableWriteSessions(ctx context.Context, node *ytsys.Node, r *models.Node) bool {
-	if p.conf.UseMaintenanceAPI {
-		return !containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeDisableWriteSessions)
-	}
+	disabledRecently := time.Time(r.WriteSessionsDisableTime).After(p.CachedClusterReloadTime(ctx))
+	disabledAtCluster := !p.conf.UseMaintenanceAPI && bool(node.DisableWriteSessions) ||
+		p.conf.UseMaintenanceAPI && containCMSMaintenanceRequest(node.MaintenanceRequests, yt.MaintenanceTypeDisableWriteSessions)
 
-	return !bool(node.DisableWriteSessions)
+	return !disabledAtCluster && (!r.WriteSessionsDisabled || !disabledRecently)
 }
 
 // disableWriteSessions disables write sessions if the aren't already disabled.
@@ -817,7 +817,7 @@ func (p *TaskProcessor) disableWriteSessions(ctx context.Context, task *models.T
 // enableWriteSessions enables write sessions if the aren't already enabled.
 func (p *TaskProcessor) enableWriteSessions(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) error {
 	disabledRecently := time.Time(r.WriteSessionsDisableTime).After(p.CachedClusterReloadTime(ctx))
-	needEnable := p.conf.UseMaintenanceAPI && r.SchedulerJobsDisabled ||
+	needEnable := p.conf.UseMaintenanceAPI && r.WriteSessionsDisabled ||
 		bool(node.DisableWriteSessions) || !bool(node.DisableWriteSessions) && disabledRecently
 	// @disable_write_sessions must be unset in the following cases:
 	// 1. Cluster state is fresh and write sessions are disabled.

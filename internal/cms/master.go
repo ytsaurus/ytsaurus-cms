@@ -17,8 +17,6 @@ import (
 	"go.ytsaurus.tech/yt/go/ytsys"
 )
 
-const CMSRobot = "robot-yt-cms"
-
 //go:generate mockgen -destination=startrek_client_mock.go -package=cms . StartrekClient
 
 type StartrekClient interface {
@@ -197,7 +195,7 @@ func (p *TaskProcessor) ensureMasterMaintenance(ctx context.Context, task *model
 func (p *TaskProcessor) startProcessingTicket(ctx context.Context, task *models.Task, r *models.Master) {
 	p.l.Debug("updating status of the startrek ticket for master", p.masterLogFields(task, r)...)
 
-	decisionMaker := CMSRobot
+	decisionMaker := robotCMS
 	if task.DecisionMaker != "" {
 		decisionMaker = string(task.DecisionMaker)
 	}
