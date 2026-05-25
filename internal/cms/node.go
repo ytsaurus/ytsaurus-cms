@@ -618,7 +618,7 @@ func (p *TaskProcessor) needDecommission(ctx context.Context, node *ytsys.Node, 
 	return !decommissionedAtCluster && (!r.DecommissionInProgress || !decommissionedRecently)
 }
 
-// startChunkDecommission stats node decommission if it isn'task already decommissioned.
+// startChunkDecommission starts node decommission if it isn't already decommissioned.
 func (p *TaskProcessor) startChunkDecommission(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) error {
 	updateInStorage := func() {
 		r.MarkDecommissioned(node.Statistics.TotalStoredChunkCount)
@@ -1015,32 +1015,16 @@ func (p *TaskProcessor) checkTabletCellGuarantees(ctx context.Context, task *mod
 			continue
 		}
 
-		disabled := cellBundles.BalancerDisabled || !bool(*b.BalancerEnabled)
-		if disabled {
-			p.l.Debug("bundle balancer is disabled", p.nodeLogFields(task, r, log.String("bundle", b.Name))...)
-			p.logBundleStats(ctx, task, node, r, b)
+		p.logBundleStats(ctx, task, node, r, b)
 
-			freeSlots := p.getAvailableSlots(node, r, b) - freeSlotsUsed
-			if freeSlots <= p.conf.BundleSlotReserve {
-				p.l.Debug("can not release node as there are not enough bundle slots",
-					p.nodeLogFields(task, r, log.String("bundle", b.Name))...)
-				return false
-			}
-
-			freeSlotsUsed++
-		} else {
-			p.l.Debug("bundle balancer is enabled",
-				p.nodeLogFields(task, r, log.String("bundle", b.Name),
-					log.Int("tablet_common_node_count", tabletCommonNodes),
-					log.Int("required_reserve", p.conf.TabletCommonNodeReserve))...)
-
-			tabletCommonLimitApplicable := node.HasTag(ytsys.TabletCommonTag) && p.conf.TabletCommonNodeReserve > 0
-			if tabletCommonLimitApplicable && tabletCommonNodes-1 < p.conf.TabletCommonNodeReserve {
-				p.l.Debug("can not release node as there are not enough nodes tagged with 'tablet_common'",
-					p.nodeLogFields(task, r, log.String("bundle", b.Name))...)
-				return false
-			}
+		freeSlots := p.getAvailableSlots(node, r, b) - freeSlotsUsed
+		if freeSlots <= p.conf.BundleSlotReserve {
+			p.l.Debug("can not release node as there are not enough bundle slots",
+				p.nodeLogFields(task, r, log.String("bundle", b.Name))...)
+			return false
 		}
+
+		freeSlotsUsed++
 	}
 
 	return true

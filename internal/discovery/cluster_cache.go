@@ -14,8 +14,7 @@ import (
 type Components map[ypath.Path]ytsys.Component
 
 type CellBundles struct {
-	Bundles          []*ytsys.TabletCellBundle
-	BalancerDisabled bool
+	Bundles []*ytsys.TabletCellBundle
 }
 
 type ClusterConfig struct {
@@ -53,9 +52,8 @@ type Cluster struct {
 	poolTrees     ytsys.PoolTrees
 	nodePoolTrees ytsys.NodePoolTrees
 
-	tabletCells            ytsys.TabletCells
-	tabletCellBundles      ytsys.TabletCellBundles
-	bundleBalancerDisabled bool
+	tabletCells       ytsys.TabletCells
+	tabletCellBundles ytsys.TabletCellBundles
 
 	// tabletCommonNodeCount stores number of free and alive cluster nodes
 	// tagged with tablet_common.
@@ -416,18 +414,12 @@ func (c *Cluster) reloadTabletCellBundles(ctx context.Context, dc *ytsys.Client)
 		return err
 	}
 
-	disabled, err := dc.GetDisableBundleBalancer(ctx)
-	if err != nil {
-		return err
-	}
-
 	if err := c.setBundleSlots(bundles); err != nil {
 		return err
 	}
 
 	c.mu.Lock()
 	c.tabletCellBundles = bundles
-	c.bundleBalancerDisabled = disabled
 	c.mu.Unlock()
 
 	return nil
@@ -668,8 +660,7 @@ func (c *Cluster) GetTabletCellBundles(n *ytsys.Node) (*CellBundles, error) {
 	}
 
 	ret := &CellBundles{
-		Bundles:          bundles,
-		BalancerDisabled: c.bundleBalancerDisabled,
+		Bundles: bundles,
 	}
 
 	return ret, nil

@@ -31,10 +31,9 @@ func TestDecommissionStats_TabletCellBundles(t *testing.T) {
 	bundles := &discovery.CellBundles{
 		Bundles: []*ytsys.TabletCellBundle{
 			{
-				Name:            "default",
-				BalancerEnabled: new(ytsys.YTBool),
-				Nodes:           []*ytsys.Addr{tabletCommonNode.Addr, {FQDN: "2.2.2.2", Port: "9012"}},
-				Production:      nil,
+				Name:       "default",
+				Nodes:      []*ytsys.Addr{tabletCommonNode.Addr, {FQDN: "2.2.2.2", Port: "9012"}},
+				Production: nil,
 				Slots: map[ytsys.Addr][]*ytsys.TabletSlot{
 					*tabletCommonNode.Addr: {
 						&ytsys.TabletSlot{
@@ -56,10 +55,9 @@ func TestDecommissionStats_TabletCellBundles(t *testing.T) {
 				},
 			},
 			{
-				Name:            "sys",
-				BalancerEnabled: new(ytsys.YTBool),
-				Nodes:           []*ytsys.Addr{tabletCommonNode.Addr},
-				Production:      nil,
+				Name:       "sys",
+				Nodes:      []*ytsys.Addr{tabletCommonNode.Addr},
+				Production: nil,
 				Slots: map[ytsys.Addr][]*ytsys.TabletSlot{
 					*tabletCommonNode.Addr: {
 						&ytsys.TabletSlot{
@@ -69,7 +67,6 @@ func TestDecommissionStats_TabletCellBundles(t *testing.T) {
 				},
 			},
 		},
-		BalancerDisabled: false,
 	}
 
 	bs.OnNodeDecommission(tabletCommonNode, nil, bundles)
