@@ -241,7 +241,7 @@ func (s *System) hotswapTasksPath() ypath.Path {
 	return s.conf.CypressRoot.Child(hotswapTasksNode)
 }
 
-// run polls cluster state and processes CMS tasks including YP maintenance requests.
+// run polls cluster state and processes CMS tasks including maintenance requests.
 func (s *System) run(ctx context.Context) error {
 	s.l.Debug("acquired lock")
 	s.leader.Store("")

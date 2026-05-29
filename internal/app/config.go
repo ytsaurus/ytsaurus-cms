@@ -16,7 +16,7 @@ import (
 
 const (
 	defaultHTTPHandlerTimeout = 30 * time.Second
-	defaultYPPollPeriod       = 10 * time.Second
+	defaultPollPeriod         = 10 * time.Second
 
 	defaultCypressRoot = ypath.Path("//sys/cms")
 )

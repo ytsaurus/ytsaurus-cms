@@ -1,0 +1,141 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cms
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cms
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["list", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cms
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cms
+subjects:
+- kind: ServiceAccount
+  name: cms
+  namespace: default
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cms-config
+data:
+  config.yaml: |
+    http_addr: ":80"
+    debug_http_addr: ":6060"
+    use_rpc_proxy: false
+    http_handler_timeout: 30s
+    cypress_root: "//sys/cms"
+    auth_config:
+      disable_auth: true
+    clusters:
+      - proxy: spyt.benchmark.ytsaurus.tech
+        bundle: default
+        task_processing_period: 15s
+        chunk_integrity_check_period: 10s
+        cluster_poll_period: 30s
+        min_group_task_size: 2
+        maintenance_attr_remove_timeout: 25m
+        enable_follower_processing: true
+        max_urc: 0.003
+        offline_node_retention_period: 3m
+        banned_node_hold_off_period: 3m
+        max_banned_node_hold_off_period: 9m
+        lvc_unban_window: 2h
+        disabled_scheduler_jobs_wait_timeout: 20m
+        disabled_write_sessions_wait_timeout: 20m
+        noc_task_disabled_scheduler_jobs_wait_timeout: 10m
+        noc_task_disabled_write_sessions_wait_timeout: 10m
+        offline_http_proxy_retention_period: 10m
+        max_http_proxies_per_role: 0.5
+        max_rpc_proxies_per_role: 0.5
+        max_banned_queue_agents: 0.35
+        max_parallel_hosts: 2
+        max_hosts_per_hour: 2.0
+        use_max_offline_nodes_constraint: true
+        max_offline_nodes: 2
+        cpu_reserve: 27.0
+        cpu_reserve_percent: 17.0
+        gpu_reserve: 8.0
+        bundle_slot_reserve: 2
+        tablet_common_node_reserve: 0
+        unconfirmed_chunk_check_timeout: 1h
+        unconfirmed_chunk_threshold: 100
+        task_processing_schedule:
+          - matcher:
+              action: "reboot"
+              comment_re: ".*schedule_processing.*"
+            allowed_hours:
+              from: 10
+              to: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cms
+  labels:
+    app: cms
+spec:
+  ports:
+  - port: 80
+    name: api
+  clusterIP: None
+  selector:
+    app: cms
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cms
+spec:
+  serviceName: "cms"
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cms
+  template:
+    metadata:
+      labels:
+        app: cms
+    spec:
+      serviceAccountName: cms
+      containers:
+      - name: cms
+        image: ghcr.io/ytsaurus/cms:dev
+        imagePullPolicy: Always
+        command: ["cms", "--config", "/etc/cms/config.yaml"]
+        env:
+        - name: YT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: yt-token
+              name: cms
+        volumeMounts:
+        - name: cms-config-volume
+          mountPath: /etc/cms
+          readOnly: true
+        - name: logs
+          mountPath: /logs
+      volumes:
+      - name: cms-config-volume
+        configMap:
+          name: cms-config
+  volumeClaimTemplates:
+  - metadata:
+      name: logs
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 5Gi
