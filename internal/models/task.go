@@ -276,8 +276,10 @@ const (
 	YTRoleNode            YTRole = "ytnode"
 	YTRoleDatNode         YTRole = "ytdatnode"
 	YTRoleExeNode         YTRole = "ytexenode"
+	YTRoleTabNode         YTRole = "yttabnode"
 	YTRoleHTTPProxy       YTRole = "ytproxy"
 	YTRoleRPCProxy        YTRole = "ytrpcproxy"
+	YTRoleMasterCache     YTRole = "ytmastercache"
 	YTRoleControllerAgent YTRole = "ytcontrolleragent"
 	YTRoleScheduler       YTRole = "ytscheduler"
 	YTRoleMaster          YTRole = "ytmaster"
@@ -287,7 +289,7 @@ const (
 func (r YTRole) Compare(cr ytsys.ClusterRole) bool {
 	switch cr {
 	case ytsys.RoleNode:
-		return r == YTRoleNode || r == YTRoleDatNode || r == YTRoleExeNode
+		return r == YTRoleNode || r == YTRoleDatNode || r == YTRoleExeNode || r == YTRoleTabNode
 	case ytsys.RoleHTTPProxy:
 		return r == YTRoleHTTPProxy
 	case ytsys.RoleRPCProxy:
