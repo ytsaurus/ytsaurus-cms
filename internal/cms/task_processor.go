@@ -1000,6 +1000,7 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 		if !t.ConfirmationRequested && len(hostsByTaskType)+newHostCount > limiter.Config.MaxParallelHosts {
 			p.l.Debug("skipping new task due to rate limit", log.Any("task", t),
 				log.Int("max_parallel_hosts", limiter.Config.MaxParallelHosts))
+			p.tryUpdateWalleDescription(ctx, t, fmt.Sprintf("skipping due to rate limit, max parallel hosts: %d", limiter.Config.MaxParallelHosts))
 			return
 		}
 
@@ -1044,6 +1045,9 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 
 	if err := p.missingChunksThrottler.Allow(); err != nil {
 		p.l.Debug("throttling task processing due to missing part chunks", log.Error(err))
+		for _, t := range other {
+			p.tryUpdateWalleDescription(ctx, t, fmt.Sprintf("throttling task processing due to missing part chunks: %s", err.Error()))
+		}
 		return ret
 	}
 
@@ -1221,10 +1225,7 @@ func (p *TaskProcessor) processTask(ctx context.Context, t *models.Task) {
 		p.processHost(ctx, t, t.HostStates[h])
 	}
 
-	if desc := p.generateWalleDescription(t); t.WalleStatusDescription != desc {
-		t.WalleStatusDescription = desc
-		p.tryUpdateTaskInStorage(ctx, t)
-	}
+	p.tryUpdateWalleDescription(ctx, t, p.generateWalleDescription(t))
 
 	if t.ProcessingState == models.StateFinished {
 		return
@@ -1520,11 +1521,20 @@ func (p *TaskProcessor) generateWalleDescription(t *models.Task) string {
 
 	for _, h := range t.HostStates {
 		for path, r := range h.Roles {
-			desc = append(desc, fmt.Sprintf("%s %s: %s", r.Type, getPodIDFromYPath(path), r.GetStateDescription()))
+			if !r.Processed() && !r.Finished() {
+				desc = append(desc, fmt.Sprintf("%s %s: %s", r.Type, getPodIDFromYPath(path), r.GetStateDescription()))
+			}
 		}
 	}
 
-	return strings.Join(desc, " | ")
+	return strings.Join(desc, ", \n")
+}
+
+func (p *TaskProcessor) tryUpdateWalleDescription(ctx context.Context, t *models.Task, desc string) {
+	if t.WalleStatusDescription != desc {
+		t.WalleStatusDescription = desc
+		p.tryUpdateTaskInStorage(ctx, t)
+	}
 }
 
 type clusterReloadTimeKeyType string

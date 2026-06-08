@@ -511,7 +511,8 @@ type Node struct {
 	SchedulerJobsDisableTime  yson.Time `json:"scheduler_jobs_disable_time" yson:"scheduler_jobs_disable_time"`
 	SchedulerJobsReenableTime yson.Time `json:"scheduler_jobs_reenable_time" yson:"scheduler_jobs_reenable_time"`
 
-	State NodeProcessingState `json:"state" yson:"state"`
+	State            NodeProcessingState `json:"state" yson:"state"`
+	StateDescription string              `json:"state_description" yson:"state_description"`
 }
 
 func NewNode(n *ytsys.Node) *Node {
@@ -531,7 +532,7 @@ func (n *Node) GetState() any {
 }
 
 func (n *Node) GetStateDescription() string {
-	return string(n.State)
+	return n.StateDescription
 }
 
 func (n *Node) StartMaintenance(req *ytsys.MaintenanceRequest) {

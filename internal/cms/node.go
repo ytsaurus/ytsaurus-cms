@@ -54,6 +54,7 @@ func (p *TaskProcessor) processNode(ctx context.Context, task *models.Task, r *m
 
 	if !p.checkOfflineNodesConstraint(ctx, task, node, r) {
 		p.l.Debug("offline node constraint failed -> skipping node", p.nodeLogFields(task, r)...)
+		r.StateDescription = fmt.Sprintf("offline node constraint failed, max offline: %d", p.conf.MaxOfflineNodes)
 		return
 	}
 
@@ -290,12 +291,13 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, task *models.Task,
 		((!task.IsGroupTask && !nodeWithoutChunks) || (task.IsGroupTask && task.TaskGroup != p.lastBannedNodeGroup)) {
 		p.l.Debug("can not ban node as another one was banned recently",
 			p.nodeLogFields(task, r, log.Time("last_ban_time", p.nodeBanLimiter.LastBanTime))...)
+		r.StateDescription = "can not ban node as another one was banned recently"
 		return
 	}
 
 	chunkIntegrityIntact := p.chunkIntegrity.Check(p.conf.MaxURC)
 	unrecoverableDataSafe := p.chunkIntegrity.CheckUnrecoverable() &&
-		(chunkIntegrityIntact || !chunkIntegrityIntact && storedChunkCount <= p.conf.IgnorePMCThreshold)
+		(chunkIntegrityIntact || storedChunkCount <= p.conf.IgnorePMCThreshold)
 
 	if task.IsGroupTask && !task.IsUrgent() && !nodeOffline && !nodeWithoutChunks {
 		p.l.Debug("will not ban node as maintenance is far ahead",
@@ -303,6 +305,7 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, task *models.Task,
 				log.Int64("total_stored_chunks", storedChunkCount),
 				log.Time("maintenance_start_time", task.ScenarioInfo.MaintenanceStart()),
 			)...)
+		r.StateDescription = fmt.Sprintf("maintenance is far ahead: chunk count %d, start time %v", storedChunkCount, task.ScenarioInfo.MaintenanceStart())
 		return
 	}
 
@@ -311,6 +314,9 @@ func (p *TaskProcessor) decommissionNode(ctx context.Context, task *models.Task,
 			p.nodeLogFields(task, r, log.String("indicators", p.chunkIntegrity.String()),
 				log.Int64("total_stored_chunks", storedChunkCount),
 				log.Int64("ignore_pmc_threshold", p.conf.IgnorePMCThreshold))...)
+		r.StateDescription = fmt.Sprintf(
+			"waiting for data to be safe: chunk count %d, threshold %d, max URC %.2f, %s",
+			storedChunkCount, p.conf.IgnorePMCThreshold, p.conf.MaxURC, p.chunkIntegrity.String())
 		return
 	}
 
@@ -366,6 +372,7 @@ func (p *TaskProcessor) checkTabletCellsDecommissioned(ctx context.Context, task
 		if s.State != ytsys.TabletSlotStateNone {
 			p.l.Debug("some tablet slots are not free -> continue waiting",
 				p.nodeLogFields(task, r, log.String("cell_id", s.CellID.String()))...)
+			r.StateDescription = fmt.Sprintf("waiting for tablet slots: cell %s", s.CellID.String())
 			return false
 		}
 	}
@@ -413,6 +420,7 @@ func (p *TaskProcessor) checkChunksDecommissioned(ctx context.Context, task *mod
 
 	p.l.Info("waiting for chunk decommission", p.nodeLogFields(task, r,
 		log.Int64("total_stored_chunk_count", node.Statistics.TotalStoredChunkCount))...)
+	r.StateDescription = fmt.Sprintf("waiting for chunk decommission: total %d", node.Statistics.TotalStoredChunkCount)
 
 	return false
 }
@@ -426,6 +434,7 @@ func (p *TaskProcessor) checkWriteSessionsDisabled(ctx context.Context, task *mo
 			p.nodeLogFields(task, r,
 				log.Int64("total_session_count", sessionCount),
 				log.Duration("disabled_for", disabledFor))...)
+		r.StateDescription = fmt.Sprintf("waiting for disabled write sessions: total %d", sessionCount)
 		return false
 	}
 
@@ -448,6 +457,7 @@ func (p *TaskProcessor) checkSchedulerJobsDisabled(ctx context.Context, task *mo
 			p.nodeLogFields(task, r,
 				log.Int64("user_slots", slots),
 				log.Duration("disabled_for", disabledFor))...)
+		r.StateDescription = fmt.Sprintf("waiting for disabled scheduler jobs: slots %d", slots)
 		return false
 	}
 
@@ -652,7 +662,7 @@ func (p *TaskProcessor) startChunkDecommission(ctx context.Context, task *models
 // finishChunkDecommission stops node decommission.
 func (p *TaskProcessor) finishChunkDecommission(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) error {
 	decommissionedRecently := time.Time(r.MarkedDecommissionedTime).After(p.CachedClusterReloadTime(ctx))
-	needEnable := p.conf.UseMaintenanceAPI && r.Decommissioned() ||
+	needEnable := p.conf.UseMaintenanceAPI && r.DecommissionInProgress ||
 		bool(node.Decommissioned) || !bool(node.Decommissioned) && decommissionedRecently
 	// @decommission attribute must be unset in the following cases:
 	// 1. Cluster state is fresh and node is decommissioned.
@@ -891,6 +901,9 @@ func (p *TaskProcessor) checkGPULimits(ctx context.Context, task *models.Task, n
 
 	if reserve < requiredReserve {
 		p.l.Debug("node can not be given as gpu limits will be broken")
+		r.StateDescription = fmt.Sprintf(
+			"gpu limits too small: tree %s, available %.2f, guaranteed %.2f, required %.2f, node %.2f",
+			tree.Name, available, guaranteed, requiredReserve, node.ResourceLimits.GPU)
 		return false
 	}
 
@@ -941,6 +954,9 @@ func (p *TaskProcessor) checkCPULimits(ctx context.Context, task *models.Task, n
 
 	if reserve < requiredReserve {
 		p.l.Debug("node can not be given as cpu limits will be broken", p.nodeLogFields(task, r)...)
+		r.StateDescription = fmt.Sprintf(
+			"cpu limits too small: available %.2f, guaranteed %.2f, required %.2f, node %.2f",
+			available, guaranteed, requiredReserve, node.ResourceLimits.CPU)
 		return false
 	}
 
@@ -1021,6 +1037,7 @@ func (p *TaskProcessor) checkTabletCellGuarantees(ctx context.Context, task *mod
 		if freeSlots <= p.conf.BundleSlotReserve {
 			p.l.Debug("can not release node as there are not enough bundle slots",
 				p.nodeLogFields(task, r, log.String("bundle", b.Name))...)
+			r.StateDescription = fmt.Sprintf("not enough bundle slots: bundle %s, free %d, required %d", b.Name, freeSlots, p.conf.BundleSlotReserve)
 			return false
 		}
 
