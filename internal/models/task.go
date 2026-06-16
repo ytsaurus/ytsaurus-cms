@@ -273,17 +273,18 @@ func (g TaskGroup) GetScenarioInfo() *walle.ScenarioInfo {
 type YTRole string
 
 const (
-	YTRoleNode            YTRole = "ytnode"
-	YTRoleDatNode         YTRole = "ytdatnode"
-	YTRoleExeNode         YTRole = "ytexenode"
-	YTRoleTabNode         YTRole = "yttabnode"
-	YTRoleHTTPProxy       YTRole = "ytproxy"
-	YTRoleRPCProxy        YTRole = "ytrpcproxy"
-	YTRoleMasterCache     YTRole = "ytmastercache"
-	YTRoleControllerAgent YTRole = "ytcontrolleragent"
-	YTRoleScheduler       YTRole = "ytscheduler"
-	YTRoleMaster          YTRole = "ytmaster"
-	YTRoleSolomonBridge   YTRole = "ytsolomonbridge"
+	YTRoleNode                YTRole = "ytnode"
+	YTRoleDatNode             YTRole = "ytdatnode"
+	YTRoleExeNode             YTRole = "ytexenode"
+	YTRoleTabNode             YTRole = "yttabnode"
+	YTRoleHTTPProxy           YTRole = "ytproxy"
+	YTRoleRPCProxy            YTRole = "ytrpcproxy"
+	YTRoleMasterCache         YTRole = "ytmastercache"
+	YTRoleControllerAgent     YTRole = "ytcontrolleragent"
+	YTRoleScheduler           YTRole = "ytscheduler"
+	YTRoleMaster              YTRole = "ytmaster"
+	YTRoleOffshoreDataGateway YTRole = "ytoffshoredatagateway"
+	YTRoleSolomonBridge       YTRole = "ytsolomonbridge"
 )
 
 func (r YTRole) Compare(cr ytsys.ClusterRole) bool {
