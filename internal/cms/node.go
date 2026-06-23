@@ -996,14 +996,17 @@ func (p *TaskProcessor) checkTabletCellGuarantees(ctx context.Context, task *mod
 		p.l.Error("unable to resolve tablet cell bundles", p.nodeLogFields(task, r, log.Error(err))...)
 		return false
 	}
-	tabletCommonNodes, err := p.cluster.GetTabletCommonNodeCount()
-	if err != nil {
-		p.l.Error("unable to get tablet common node count", p.nodeLogFields(task, r, log.Error(err))...)
-		return false
-	}
 
 	if len(cellBundles.Bundles) == 0 {
 		p.l.Debug("node has no active cells", p.nodeLogFields(task, r)...)
+	}
+
+	if len(cellBundles.Bundles) == 0 && !p.conf.SkipTabletCommonReserveCheck {
+		tabletCommonNodes, err := p.cluster.GetTabletCommonNodeCount()
+		if err != nil {
+			p.l.Error("unable to get tablet common node count", p.nodeLogFields(task, r, log.Error(err))...)
+			return false
+		}
 
 		reserve := tabletCommonNodes
 		if bool(!node.Decommissioned) || !r.DecommissionInProgress {

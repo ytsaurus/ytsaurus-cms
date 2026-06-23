@@ -140,8 +140,15 @@ type TaskProcessorConfig struct {
 	// required for node (belonging to bundle) decommission.
 	//
 	// Only used for bundles which have balancer disabled.
-	BundleSlotReserve       int `yaml:"bundle_slot_reserve"`
-	TabletCommonNodeReserve int `yaml:"tablet_common_node_reserve"`
+	BundleSlotReserve int `yaml:"bundle_slot_reserve"`
+
+	// SkipTabletCommonReserveCheck allows not to check that there are enough empty tablet_common nodes in the cluster.
+	//
+	// "false" value is only sensible on clusters with Bundle Balancer.
+	//
+	// Can safely remove this and related options when there are no clusters under BB.
+	SkipTabletCommonReserveCheck bool `yaml:"skip_tablet_common_reserve_check"`
+	TabletCommonNodeReserve      int  `yaml:"tablet_common_node_reserve"`
 
 	// UnconfirmedChunkCheckTimeout is a timeout that handles slow decommissions.
 	// If node is still not decommissioned after this timeout and it has small number of chunks
