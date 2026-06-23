@@ -991,6 +991,16 @@ func (p *TaskProcessor) checkReservePoolResources(ctx context.Context, task *mod
 }
 
 func (p *TaskProcessor) checkTabletCellGuarantees(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) bool {
+	if time.Since(time.Time(task.CreatedAt)) < p.conf.TabletCellGuaranteesCheckDelay {
+		p.l.Debug("delaying tablet cell guarantees check", p.nodeLogFields(task, r,
+			log.Time("task_creation_time", time.Time(task.CreatedAt)),
+			log.Duration("tablet_cell_guarantees_check_delay", p.conf.TabletCellGuaranteesCheckDelay),
+		)...)
+		r.StateDescription = fmt.Sprintf("delaying tablet cell guarantees check: delay %v, created at %v",
+			p.conf.TabletCellGuaranteesCheckDelay, time.Time(task.CreatedAt))
+		return false
+	}
+
 	cellBundles, err := p.cluster.GetTabletCellBundles(node)
 	if err != nil {
 		p.l.Error("unable to resolve tablet cell bundles", p.nodeLogFields(task, r, log.Error(err))...)

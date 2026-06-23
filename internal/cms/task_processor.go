@@ -141,6 +141,12 @@ type TaskProcessorConfig struct {
 	//
 	// Only used for bundles which have balancer disabled.
 	BundleSlotReserve int `yaml:"bundle_slot_reserve"`
+	// TabletCellGuaranteesCheckDelay forbids cms to decommission tab nodes some time after task creation.
+	//
+	// Default value is zero.
+	//
+	// Can be removed after https://st.yandex-team.ru/YT-24819 is implemented.
+	TabletCellGuaranteesCheckDelay time.Duration `yaml:"tablet_cell_guarantees_check_delay"`
 
 	// SkipTabletCommonReserveCheck allows not to check that there are enough empty tablet_common nodes in the cluster.
 	//
