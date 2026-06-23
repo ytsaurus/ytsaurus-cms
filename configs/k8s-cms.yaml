@@ -2,7 +2,6 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: cms
-  namespace: default
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -24,7 +23,6 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: cms
-  namespace: default
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -40,7 +38,7 @@ data:
     auth_config:
       disable_auth: true
     clusters:
-      - proxy: spyt.benchmark.ytsaurus.tech
+      - proxy: cluster_address
         bundle: default
         task_processing_period: 15s
         chunk_integrity_check_period: 10s
@@ -61,8 +59,8 @@ data:
         max_http_proxies_per_role: 0.5
         max_rpc_proxies_per_role: 0.5
         max_banned_queue_agents: 0.35
-        max_parallel_hosts: 2
-        max_hosts_per_hour: 2.0
+        max_parallel_hosts: 1
+        max_hosts_per_hour: 1.0
         use_max_offline_nodes_constraint: true
         max_offline_nodes: 2
         cpu_reserve: 27.0
@@ -119,7 +117,7 @@ spec:
         - name: YT_TOKEN
           valueFrom:
             secretKeyRef:
-              key: yt-token
+              key: YT_TOKEN
               name: cms
         volumeMounts:
         - name: cms-config-volume
