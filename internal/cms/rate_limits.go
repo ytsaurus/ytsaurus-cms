@@ -18,6 +18,7 @@ type RateLimitConfig struct {
 
 type Limiter struct {
 	*rate.Limiter
+	Name   string
 	Config *RateLimitConfig
 }
 
@@ -38,9 +39,9 @@ func (c *RateLimitConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	return nil
 }
 
-func NewRateLimiter(c *RateLimitConfig, activeHostCount int) *Limiter {
+func NewRateLimiter(limiterName string, c *RateLimitConfig, activeHostCount int) *Limiter {
 	r := rate.Every(time.Duration(float64(time.Hour) / c.MaxHostsPerHour))
-	limiter := &Limiter{rate.NewLimiter(r, c.MaxParallelHosts), c}
+	limiter := &Limiter{rate.NewLimiter(r, c.MaxParallelHosts), limiterName, c}
 
 	if activeHostCount < c.MaxParallelHosts {
 		limiter.AllowN(time.Now(), activeHostCount)

@@ -41,6 +41,12 @@ const (
 	defaultHostAnnotationPeriod             = time.Second * 15
 )
 
+const (
+	commonRateLimiterName = "common_rate_limiter"
+	masterRateLimiterName = "master_rate_limiter"
+	gpuRateLimiterName    = "GPU_rate_limiter"
+)
+
 type StartrekConfig struct {
 	OAuthToken string `yaml:"-"`
 	URL        string `yaml:"api_url"`
@@ -455,7 +461,7 @@ func (p *TaskProcessor) initRateLimiter(tasks []*models.Task) {
 	}
 
 	p.l.Debug("setting non-GPU rate limits", log.Any("config", p.conf.RateLimits), log.Int("active_host_count", activeHostCount))
-	p.rateLimiter = NewRateLimiter(&p.conf.RateLimits, activeHostCount)
+	p.rateLimiter = NewRateLimiter(commonRateLimiterName, &p.conf.RateLimits, activeHostCount)
 }
 
 func (p *TaskProcessor) initGPURateLimiter(tasks []*models.Task) {
@@ -471,7 +477,7 @@ func (p *TaskProcessor) initGPURateLimiter(tasks []*models.Task) {
 	}
 
 	p.l.Debug("setting GPU rate limits", log.Any("config", p.conf.GPURateLimits), log.Int("active_host_count", activeHostCount))
-	p.gpuRateLimiter = NewRateLimiter(&p.conf.GPURateLimits, activeHostCount)
+	p.gpuRateLimiter = NewRateLimiter(gpuRateLimiterName, &p.conf.GPURateLimits, activeHostCount)
 }
 
 func (p *TaskProcessor) initMasterRateLimiter(tasks []*models.Task) {
@@ -494,7 +500,7 @@ func (p *TaskProcessor) initMasterRateLimiter(tasks []*models.Task) {
 	}
 
 	p.l.Debug("setting master rate limits", log.Any("config", p.conf.MasterRateLimits), log.Int("active_host_count", len(activeHosts)))
-	p.masterRateLimiter = NewRateLimiter(&p.conf.MasterRateLimits, len(activeHosts))
+	p.masterRateLimiter = NewRateLimiter(masterRateLimiterName, &p.conf.MasterRateLimits, len(activeHosts))
 }
 
 // initLastNodeBanTime initializes last node ban time.
@@ -1068,8 +1074,9 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 
 		if !t.ConfirmationRequested && len(inProcess)+newHostCount > limiter.Config.MaxParallelHosts {
 			p.l.Debug("skipping new task due to rate limit", log.Any("task", t),
+				log.String("limiter", limiter.Name),
 				log.Int("max_parallel_hosts", limiter.Config.MaxParallelHosts))
-			p.tryUpdateWalleDescription(ctx, t, fmt.Sprintf("skipping due to rate limit, max parallel hosts: %d", limiter.Config.MaxParallelHosts))
+			p.tryUpdateWalleDescription(ctx, t, fmt.Sprintf("skipping new task due to rate, limiter: %s, max parallel hosts: %d", limiter.Name, limiter.Config.MaxParallelHosts))
 			return
 		}
 
@@ -1085,6 +1092,7 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 
 		if !t.ConfirmationRequested && (!reserve.OK() || reserve.Delay() != 0) {
 			p.l.Debug("skipping new task due to rate limit", log.Any("task", t),
+				log.String("limiter", limiter.Name),
 				log.Duration("wait_time", reserve.Delay()))
 			reserve.CancelAt(start)
 			return
