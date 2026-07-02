@@ -125,6 +125,11 @@ func (t *Task) HasMasterRole() bool {
 	return len(t.GetMasters()) > 0
 }
 
+// IsMasterInProcess checks whether task contains master role and is actively being processed.
+func (t *Task) IsMasterInProcess() bool {
+	return t.HasMasterRole() && t.ProcessingState != StateNew
+}
+
 // GetMasters returns all masters of the task.
 func (t *Task) GetMasters() []*Master {
 	var masters []*Master

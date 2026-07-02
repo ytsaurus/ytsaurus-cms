@@ -123,8 +123,10 @@ type TaskProcessorConfig struct {
 	MaxRPCProxiesPerRole            float64       `yaml:"max_rpc_proxies_per_role"`
 	MaxBannedQueueAgents            float64       `yaml:"max_banned_queue_agents"`
 
-	RateLimits    RateLimitConfig `yaml:",inline"`
-	GPURateLimits RateLimitConfig `yaml:"gpu_rate_limits"`
+	RateLimits             RateLimitConfig `yaml:",inline"`
+	GPURateLimits          RateLimitConfig `yaml:"gpu_rate_limits"`
+	EnableMasterRateLimits bool            `yaml:"enable_master_rate_limits"`
+	MasterRateLimits       RateLimitConfig `yaml:"master_limits"`
 
 	UseMaxOfflineNodesConstraint bool `yaml:"use_max_offline_nodes_constraint"`
 	MaxOfflineNodes              int  `yaml:"max_offline_nodes"`
@@ -252,6 +254,13 @@ func (c *TaskProcessorConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		c.MaxBannedQueueAgents = defaultMaxBannedQueueAgents
 	}
 
+	if c.MasterRateLimits.MaxParallelHosts == 0 {
+		c.MasterRateLimits.MaxParallelHosts = defaultMaxParallelHosts
+	}
+	if c.MasterRateLimits.MaxHostsPerHour == 0 {
+		c.MasterRateLimits.MaxHostsPerHour = defaultMaxHostsPerHour
+	}
+
 	if c.UseMaxOfflineNodesConstraint {
 		if c.MaxOfflineNodes < 0 {
 			return xerrors.New("max offline nodes must be non-negative")
@@ -329,6 +338,7 @@ type TaskProcessor struct {
 	rpcProxyRoleLimits  *ProxyRoleLimits
 	rateLimiter         *Limiter
 	gpuRateLimiter      *Limiter
+	masterRateLimiter   *Limiter
 
 	reservePool *ReservePool
 
@@ -356,6 +366,7 @@ type TaskProcessor struct {
 	taskProcessingLoop          metrics.Timer
 	tasksInProcess              metrics.GaugeVec
 	gpuTasksInProcess           metrics.GaugeVec
+	masterTasksInProcess        metrics.GaugeVec
 	masterTaskDurationVec       metrics.TimerVec
 	taskDurationVec             metrics.TimerVec
 	timeSinceLastTaskProcessing metrics.Timer
@@ -373,9 +384,10 @@ type TaskProcessor struct {
 	failedUnbans                    metrics.Counter
 	hostAnnotationsReloadErrors     metrics.Counter
 
-	reservePoolCPULimit  metrics.Gauge
-	maxTasksInProcess    metrics.IntGauge
-	maxGPUTasksInProcess metrics.IntGauge
+	reservePoolCPULimit     metrics.Gauge
+	maxTasksInProcess       metrics.IntGauge
+	maxGPUTasksInProcess    metrics.IntGauge
+	maxMasterTasksInProcess metrics.IntGauge
 }
 
 // NewTaskProcessor creates task processor with given params.
@@ -410,6 +422,7 @@ func (p *TaskProcessor) reset(tasks []*models.Task) {
 	p.rpcProxyRoleLimits = NewProxyRoleLimits(p.Conf().MaxRPCProxiesPerRole, &rpcProxyCache{c: p.cluster})
 	p.initRateLimiter(tasks)
 	p.initGPURateLimiter(tasks)
+	p.initMasterRateLimiter(tasks)
 	p.nodeBanLimiter = NewNodeBanLimiter(p.conf.BannedNodeHoldOffPeriod, p.conf.MaxBannedNodeHoldOffPeriod)
 	p.initLastNodeBanTime(tasks)
 	p.initLastTaskProcessingTime(tasks)
@@ -436,7 +449,7 @@ func (p *TaskProcessor) initRateLimiter(tasks []*models.Task) {
 
 	activeHostCount := 0
 	for _, t := range tasks {
-		if t.ProcessingState != models.StateNew && !p.isGPUTask(t) {
+		if t.ProcessingState != models.StateNew && !p.isGPUTask(t) && !(p.conf.EnableMasterRateLimits && t.HasMasterRole()) {
 			activeHostCount += len(t.Hosts)
 		}
 	}
@@ -459,6 +472,29 @@ func (p *TaskProcessor) initGPURateLimiter(tasks []*models.Task) {
 
 	p.l.Debug("setting GPU rate limits", log.Any("config", p.conf.GPURateLimits), log.Int("active_host_count", activeHostCount))
 	p.gpuRateLimiter = NewRateLimiter(&p.conf.GPURateLimits, activeHostCount)
+}
+
+func (p *TaskProcessor) initMasterRateLimiter(tasks []*models.Task) {
+	if !p.conf.EnableMasterRateLimits {
+		p.l.Debug("Rate limits for masters are disabled", log.Any("tasks", tasks))
+		return
+	}
+	if p.masterRateLimiter != nil {
+		p.l.Debug("Limiter for masters is already set, skipping...", log.Any("tasks", tasks))
+		return
+	}
+
+	activeHosts := make(map[string]struct{})
+	for _, t := range tasks {
+		if t.IsMasterInProcess() {
+			for _, h := range t.Hosts {
+				activeHosts[h] = struct{}{}
+			}
+		}
+	}
+
+	p.l.Debug("setting master rate limits", log.Any("config", p.conf.MasterRateLimits), log.Int("active_host_count", len(activeHosts)))
+	p.masterRateLimiter = NewRateLimiter(&p.conf.MasterRateLimits, len(activeHosts))
 }
 
 // initLastNodeBanTime initializes last node ban time.
@@ -548,6 +584,7 @@ func (p *TaskProcessor) RegisterMetrics(r metrics.Registry) {
 	p.taskDurationVec = r.TimerVec("task_duration_vec", []string{labelTask, labelHost, labelProcessingState})
 	p.timeSinceLastTaskProcessing = r.Timer("time_since_last_task_processing")
 	p.gpuTasksInProcess = r.GaugeVec("gpu_tasks_in_process", []string{labelAction, labelProcessingState})
+	p.masterTasksInProcess = r.GaugeVec("master_tasks_in_process", []string{labelAction, labelProcessingState})
 	p.taskProcessingDuration = r.DurationHistogram("task_processing_duration", metrics.NewDurationBuckets(
 		time.Minute,
 		time.Minute*5,
@@ -575,6 +612,8 @@ func (p *TaskProcessor) RegisterMetrics(r metrics.Registry) {
 	p.maxTasksInProcess.Set(int64(p.conf.RateLimits.MaxParallelHosts))
 	p.maxGPUTasksInProcess = r.IntGauge("max_gpu_tasks_in_process")
 	p.maxGPUTasksInProcess.Set(int64(p.conf.GPURateLimits.MaxParallelHosts))
+	p.maxMasterTasksInProcess = r.IntGauge("max_master_tasks_in_process")
+	p.maxMasterTasksInProcess.Set(int64(p.conf.MasterRateLimits.MaxParallelHosts))
 
 	p.colocationLimits.RegisterMetrics(r)
 }
@@ -592,6 +631,10 @@ func (p *TaskProcessor) resetLoopMetrics() {
 				labelAction:          string(action),
 				labelProcessingState: string(state),
 			}).Set(0.0)
+			p.masterTasksInProcess.With(map[string]string{
+				labelAction:          string(action),
+				labelProcessingState: string(state),
+			}).Set(0.0)
 		}
 	}
 }
@@ -604,6 +647,12 @@ func (p *TaskProcessor) initLoopMetrics(tasks []*models.Task) {
 		}).Add(1.0)
 		if p.isGPUTask(t) {
 			p.gpuTasksInProcess.With(map[string]string{
+				labelAction:          string(t.Action),
+				labelProcessingState: string(t.ProcessingState),
+			}).Add(1.0)
+		}
+		if t.HasMasterRole() {
+			p.masterTasksInProcess.With(map[string]string{
 				labelAction:          string(t.Action),
 				labelProcessingState: string(t.ProcessingState),
 			}).Add(1.0)
@@ -915,15 +964,23 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 	// hosts is a set of in-process hosts.
 	hosts := make(map[string]struct{})
 	gpuHosts := make(map[string]struct{})
+	masterHosts := make(map[string]struct{})
+
+	hostGroupFor := func(t *models.Task) (inProcess map[string]struct{}, limiter *Limiter) {
+		if t.HasMasterRole() && p.masterRateLimiter != nil {
+			return masterHosts, p.masterRateLimiter
+		}
+		if p.isGPUTask(t) {
+			return gpuHosts, p.gpuRateLimiter
+		}
+		return hosts, p.rateLimiter
+	}
+
 	addHosts := func(tasks ...*models.Task) {
 		for _, t := range tasks {
-			hostsByTaskType := hosts
-			if p.isGPUTask(t) {
-				hostsByTaskType = gpuHosts
-			}
-
+			inProcess, _ := hostGroupFor(t)
 			for _, h := range t.Hosts {
-				hostsByTaskType[h] = struct{}{}
+				inProcess[h] = struct{}{}
 			}
 		}
 	}
@@ -992,25 +1049,24 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 			return
 		}
 
-		isGPUTask := p.isGPUTask(t)
-		hostsByTaskType := hosts
-		if isGPUTask {
-			hostsByTaskType = gpuHosts
+		if clusterReloadTime := p.CachedClusterReloadTime(ctx); !clusterReloadTime.IsZero() && time.Time(t.CreatedAt).After(clusterReloadTime) {
+			p.l.Debug("skipping new task due to stale cluster snapshot",
+				log.String("task_id", string(t.ID)),
+				log.Time("task_creation_time", time.Time(t.CreatedAt)),
+				log.Time("cluster_reload_time", clusterReloadTime))
+			return
 		}
+
+		inProcess, limiter := hostGroupFor(t)
 
 		newHostCount := 0
 		for _, h := range t.Hosts {
-			if _, ok := hostsByTaskType[h]; !ok {
+			if _, ok := inProcess[h]; !ok {
 				newHostCount++
 			}
 		}
 
-		limiter := p.rateLimiter
-		if isGPUTask {
-			limiter = p.gpuRateLimiter
-		}
-
-		if !t.ConfirmationRequested && len(hostsByTaskType)+newHostCount > limiter.Config.MaxParallelHosts {
+		if !t.ConfirmationRequested && len(inProcess)+newHostCount > limiter.Config.MaxParallelHosts {
 			p.l.Debug("skipping new task due to rate limit", log.Any("task", t),
 				log.Int("max_parallel_hosts", limiter.Config.MaxParallelHosts))
 			p.tryUpdateWalleDescription(ctx, t, fmt.Sprintf("skipping due to rate limit, max parallel hosts: %d", limiter.Config.MaxParallelHosts))
@@ -1564,11 +1620,8 @@ func WithLastClusterReloadTime(ctx context.Context, c models.Cluster) context.Co
 	return context.WithValue(ctx, clusterReloadTimeKey, c.LastReloadTime())
 }
 
-// CachedClusterReloadTime returns cached cluster reload time in ctx. If it is nil, returns p.cluster.LastReloadTime().
+// CachedClusterReloadTime returns cached cluster reload time in ctx. Returns zero time if not set.
 func (p *TaskProcessor) CachedClusterReloadTime(ctx context.Context) time.Time {
-	t, ok := ctx.Value(clusterReloadTimeKey).(time.Time)
-	if !ok {
-		return p.cluster.LastReloadTime()
-	}
+	t, _ := ctx.Value(clusterReloadTimeKey).(time.Time)
 	return t
 }
