@@ -2,9 +2,9 @@ package cms
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
+	"github.com/davecgh/go-spew/spew"
 	"go.ytsaurus.tech/library/go/ptr"
 	"go.ytsaurus.tech/yt/admin/cms/internal/models"
 	"go.ytsaurus.tech/yt/go/guid"
@@ -179,7 +179,7 @@ func tasksString(tasks []*models.Task) string {
 			str += "<nil> "
 			continue
 		}
-		str += fmt.Sprintf("%+v ", *t)
+		str += spew.Sdump(t)
 	}
 	return str
 }
