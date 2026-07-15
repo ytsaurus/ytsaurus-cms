@@ -144,6 +144,13 @@ type TaskProcessorConfig struct {
 	UseReservePool  bool       `yaml:"use_reserve_pool"`
 	ReservePoolPath ypath.Path `yaml:"reserve_pool_path"`
 
+	// TabletDecommissionWaitTimeout sets max wait timeout for cells to become None after tablet node decommission.
+	// When timeout is over, node is given even with cells remaining Leading.
+	// If set to zero, node will not be given until all cells become None.
+	TabletDecommissionWaitTimeout time.Duration `yaml:"tablet_decommission_wait_timeout"`
+
+	// SkipBundleSlotReserveCheck skips bundle slot reserve check.
+	SkipBundleSlotReserveCheck bool `yaml:"skip_bundle_slot_reserve_check"`
 	// BundleSlotReserve is a min number of free tablet slots (available for a bundle)
 	// required for node (belonging to bundle) decommission.
 	//

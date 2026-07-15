@@ -368,6 +368,12 @@ func (p *TaskProcessor) checkNodeOffline(node *ytsys.Node) bool {
 }
 
 func (p *TaskProcessor) checkTabletCellsDecommissioned(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) bool {
+	if r.DecommissionInProgress && p.conf.TabletDecommissionWaitTimeout != 0 &&
+		time.Since(time.Time(r.MarkedDecommissionedTime)) > p.conf.TabletDecommissionWaitTimeout {
+		p.l.Debug("decommission timeout has passed", p.nodeLogFields(task, r,
+			log.Duration("timeout", p.conf.TabletDecommissionWaitTimeout), log.Any("decommissioned_at", r.MarkedDecommissionedTime))...)
+		return true
+	}
 	for _, s := range node.TabletSlots {
 		if s.State != ytsys.TabletSlotStateNone {
 			p.l.Debug("some tablet slots are not free -> continue waiting",
@@ -1032,6 +1038,11 @@ func (p *TaskProcessor) checkTabletCellGuarantees(ctx context.Context, task *mod
 			return false
 		}
 
+		return true
+	}
+
+	if p.conf.SkipBundleSlotReserveCheck {
+		p.l.Debug("skipping bundle slot reserve check", p.nodeLogFields(task, r)...)
 		return true
 	}
 
