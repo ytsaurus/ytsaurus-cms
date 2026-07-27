@@ -156,12 +156,15 @@ type TaskProcessorConfig struct {
 	//
 	// Only used for bundles which have balancer disabled.
 	BundleSlotReserve int `yaml:"bundle_slot_reserve"`
-	// TabletCellGuaranteesCheckDelay forbids cms to decommission tab nodes some time after task creation.
+	// BundleControllerReadinessTimeout enables delegation of tab node and rpc proxy
+	// maintenance processing to bundle controller.
 	//
-	// Default value is zero.
+	// When set to a non-zero value, cms waits for bundle controller to move the load
+	// off the instance, watching the @bundle_controller_annotations attribute,
+	// but no longer than this timeout.
 	//
-	// Can be removed after https://st.yandex-team.ru/YT-24819 is implemented.
-	TabletCellGuaranteesCheckDelay time.Duration `yaml:"tablet_cell_guarantees_check_delay"`
+	// Zero value (default) disables the feature.
+	BundleControllerReadinessTimeout time.Duration `yaml:"bundle_controller_readiness_timeout"`
 
 	// SkipTabletCommonReserveCheck allows not to check that there are enough empty tablet_common nodes in the cluster.
 	//
@@ -322,10 +325,13 @@ func (c *TaskProcessorConfig) UnmarshalYAML(unmarshal func(any) error) error {
 }
 
 const (
-	labelAction          = "action"
-	labelProcessingState = "processing_state"
-	labelTask            = "task"
-	labelHost            = "host"
+	labelAction                = "action"
+	labelProcessingState       = "processing_state"
+	labelTask                  = "task"
+	labelHost                  = "host"
+	labelPodID                 = "pod_id"
+	labelComponent             = "component"
+	labelBundleControllerState = "bundle_controller_state"
 )
 
 // TaskProcessor is an actual CMS implementation.
@@ -401,6 +407,8 @@ type TaskProcessor struct {
 	maxTasksInProcess       metrics.IntGauge
 	maxGPUTasksInProcess    metrics.IntGauge
 	maxMasterTasksInProcess metrics.IntGauge
+
+	bundleControllerManagedTasks metrics.GaugeVec
 }
 
 // NewTaskProcessor creates task processor with given params.
@@ -628,12 +636,16 @@ func (p *TaskProcessor) RegisterMetrics(r metrics.Registry) {
 	p.maxMasterTasksInProcess = r.IntGauge("max_master_tasks_in_process")
 	p.maxMasterTasksInProcess.Set(int64(p.conf.MasterRateLimits.MaxParallelHosts))
 
+	p.bundleControllerManagedTasks = r.GaugeVec("bundle_controller_managed_tasks",
+		[]string{labelComponent, labelHost, labelPodID, labelTask, labelBundleControllerState})
+
 	p.colocationLimits.RegisterMetrics(r)
 }
 
 func (p *TaskProcessor) resetLoopMetrics() {
 	p.taskDurationVec.Reset()
 	p.masterTaskDurationVec.Reset()
+	p.bundleControllerManagedTasks.Reset()
 	for _, action := range walle.HostActions {
 		for _, state := range models.TaskProcessingStates {
 			p.tasksInProcess.With(map[string]string{

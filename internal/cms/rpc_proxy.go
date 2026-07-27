@@ -2,6 +2,7 @@ package cms
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"go.ytsaurus.tech/library/go/core/log"
@@ -58,6 +59,26 @@ func (p *TaskProcessor) processPendingRPCProxy(
 			p.rpcProxyLogFields(task, r)...)
 		p.decommissionRPCProxy(ctx, task, proxy, r)
 		return
+	}
+
+	if p.isBundleControllerManaged(proxy.BundleControllerAnnotations) {
+		state := p.bundleControllerState(proxy.BundleControllerAnnotations, r.MaintenanceStartTime)
+		p.bundleControllerManagedTasks.With(map[string]string{
+			labelComponent:             string(ytsys.RoleRPCProxy),
+			labelHost:                  r.Host,
+			labelPodID:                 strings.Split(r.Addr.FQDN, ".")[0],
+			labelTask:                  string(task.ID),
+			labelBundleControllerState: string(state),
+		}).Set(1.0)
+		switch state {
+		case BCStateReady:
+			p.l.Debug("bundle controller has finished with the rpc proxy -> proceeding to decommission", p.rpcProxyLogFields(task, r)...)
+		case BCStateWaiting:
+			p.l.Debug("waiting for bundle controller", p.rpcProxyLogFields(task, r)...)
+			return
+		case BCStateTimedOut:
+			p.l.Warn("bundle controller readiness timeout exceeded -> falling back to regular decommission", p.rpcProxyLogFields(task, r)...)
+		}
 	}
 
 	p.rpcProxyRoleLimits.Reload()

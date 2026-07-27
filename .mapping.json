@@ -28,6 +28,7 @@
   "internal/app/system.go":"yt/admin/cms/internal/app/system.go",
   "internal/app/system_api.go":"yt/admin/cms/internal/app/system_api.go",
   "internal/app/task_discovery.go":"yt/admin/cms/internal/app/task_discovery.go",
+  "internal/cms/bundle_controller_state.go":"yt/admin/cms/internal/cms/bundle_controller_state.go",
   "internal/cms/colocation.go":"yt/admin/cms/internal/cms/colocation.go",
   "internal/cms/controller_agent.go":"yt/admin/cms/internal/cms/controller_agent.go",
   "internal/cms/discovery_client.go":"yt/admin/cms/internal/cms/discovery_client.go",

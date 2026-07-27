@@ -997,14 +997,26 @@ func (p *TaskProcessor) checkReservePoolResources(ctx context.Context, task *mod
 }
 
 func (p *TaskProcessor) checkTabletCellGuarantees(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node) bool {
-	if time.Since(time.Time(task.CreatedAt)) < p.conf.TabletCellGuaranteesCheckDelay {
-		p.l.Debug("delaying tablet cell guarantees check", p.nodeLogFields(task, r,
-			log.Time("task_creation_time", time.Time(task.CreatedAt)),
-			log.Duration("tablet_cell_guarantees_check_delay", p.conf.TabletCellGuaranteesCheckDelay),
-		)...)
-		r.StateDescription = fmt.Sprintf("delaying tablet cell guarantees check: delay %v, created at %v",
-			p.conf.TabletCellGuaranteesCheckDelay, time.Time(task.CreatedAt))
-		return false
+	if p.isBundleControllerManaged(node.BundleControllerAnnotations) {
+		state := p.bundleControllerState(node.BundleControllerAnnotations, r.MaintenanceStartTime)
+		p.bundleControllerManagedTasks.With(map[string]string{
+			labelComponent:             string(ytsys.RoleNode),
+			labelHost:                  r.Host,
+			labelPodID:                 strings.Split(r.Addr.FQDN, ".")[0],
+			labelTask:                  string(task.ID),
+			labelBundleControllerState: string(state),
+		}).Set(1.0)
+		switch state {
+		case BCStateReady:
+			p.l.Debug("bundle controller has finished with the node -> proceeding to decommission", p.nodeLogFields(task, r)...)
+			return true
+		case BCStateWaiting:
+			p.l.Debug("waiting for bundle controller", p.nodeLogFields(task, r)...)
+			r.StateDescription = "waiting for bundle controller"
+			return false
+		case BCStateTimedOut:
+			p.l.Warn("bundle controller readiness timeout exceeded -> falling back to regular decommission", p.nodeLogFields(task, r)...)
+		}
 	}
 
 	cellBundles, err := p.cluster.GetTabletCellBundles(node)
