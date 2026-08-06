@@ -51,6 +51,7 @@ type SystemConfig struct {
 
 	// Proxy identifies cluster.
 	Proxy               string              `yaml:"proxy"`
+	UseTLS              bool                `yaml:"use_tls"`
 	TaskDiscoveryConfig TaskDiscoveryConfig `yaml:"task_discovery_config"`
 
 	// Bundle for service tables, sys by default.

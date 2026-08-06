@@ -71,12 +71,14 @@ func (a *App) Run(ctx context.Context) error {
 			Proxy:  c.Proxy,
 			Token:  a.conf.YTToken,
 			Logger: l,
+			UseTLS: c.UseTLS,
 		})
 		if a.conf.UseRPCProxy {
 			yc, err = ytrpc.NewClient(&yt.Config{
 				Proxy:  c.Proxy,
 				Token:  a.conf.YTToken,
 				Logger: l,
+				UseTLS: c.UseTLS,
 			})
 		}
 		if err != nil {
