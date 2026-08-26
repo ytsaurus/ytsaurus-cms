@@ -16,10 +16,7 @@ import (
 )
 
 const (
-	AgentTaskIssuer        = "node-drain-agent"
-	AgentAnnotationPrefix  = AgentTaskIssuer // E.g. `node-drain-agent/hw_watcher.mem.status: "FAILED"`.
-	ManualTaskIssuer       = "manual-drain-request"
-	ManualAnnotationPrefix = ManualTaskIssuer // E.g. `manual-drain-request/any-data/power-off: "Some comment"`.
+	TaskAnnotationPrefix = "yt-cms-request" // For example, full annotation: `yt-cms-request/any-issuer: "Comment"`.
 
 	defaultTaskUpdatePeriod    = 10 * time.Second
 	defaultTaskDeletionTimeout = 20 * time.Minute
@@ -91,7 +88,7 @@ func (d *TaskDiscovery) updateTasks(ctx context.Context) error {
 
 	var clusterTasks []*models.Task
 	for _, t := range tasks {
-		if t.Origin == models.OriginWalle {
+		if t.Origin == models.OriginK8S {
 			clusterTasks = append(clusterTasks, t)
 		}
 	}
@@ -149,25 +146,16 @@ type UpdatePlan struct {
 func (d *TaskDiscovery) makeUpdatePlan(tasks []*models.Task, nodes *corev1.NodeList) *UpdatePlan {
 	plan := &UpdatePlan{}
 
-	tasksByNode := make(map[string][]*models.Task)
-	for _, t := range tasks {
-		node := t.Hosts[0]
-		tasksByNode[node] = append(tasksByNode[node], t)
-	}
-
 	// Add new tasks.
 	for _, node := range nodes.Items {
-		if ts := tasksByNode[node.Name]; len(ts) > 0 {
-			continue // Task for this node already exists.
-		}
-
-		if t := createManualTask(node); t != nil {
-			plan.Created = append(plan.Created, t)
-			continue
-		}
-		if t := createAgentTask(node); t != nil {
-			plan.Created = append(plan.Created, t)
-			continue
+		for key := range node.Annotations {
+			if findTask(tasks, node.Name, key) != nil {
+				continue
+			}
+			if t := createTask(node, key); t != nil {
+				plan.Created = append(plan.Created, t)
+				continue
+			}
 		}
 	}
 
@@ -177,32 +165,28 @@ func (d *TaskDiscovery) makeUpdatePlan(tasks []*models.Task, nodes *corev1.NodeL
 
 	// Delete finished or canceled tasks.
 	for _, task := range tasks {
-		if task.Origin != models.OriginWalle {
+		if task.Origin != models.OriginK8S {
 			continue
 		}
 
-		node := findNode(nodes, task.Hosts[0])
-		if node == nil {
-			d.l.Info("no such node, deleting task", log.String("node", task.Hosts[0]), log.Any("nodes", nodes), log.Any("task", task))
+		var foundNode *corev1.Node
+		for _, h := range task.Hosts {
+			node := findNode(nodes, h)
+			if node != nil {
+				foundNode = node
+				break
+			}
+		}
+		if foundNode == nil {
+			d.l.Info("no such hosts, deleting task", log.Strings("hosts", task.Hosts), log.Any("nodes", nodes), log.Any("task", task))
 			plan.Deleted = append(plan.Deleted, task)
 			continue
 		}
 
-		switch task.Issuer {
-		case ManualTaskIssuer:
-			if _, ok := node.Annotations[task.Failure]; !ok {
-				d.l.Info("manual task annotation is missing, deleting task", log.String("node", task.Hosts[0]), log.Any("task", task))
-				plan.Deleted = append(plan.Deleted, task)
-				continue
-			}
-		case AgentTaskIssuer:
-			for _, check := range ActiveChecks {
-				if checkRes := check(*node); task.Failure == checkRes.Name && !checkRes.ActionRequired {
-					d.l.Info("check action is not required, deleting task", log.String("node", task.Hosts[0]), log.Any("check_result", checkRes), log.Any("task", task))
-					plan.Deleted = append(plan.Deleted, task)
-					continue
-				}
-			}
+		if _, ok := foundNode.Annotations[task.Failure]; !ok {
+			d.l.Info("task annotation is missing, deleting task", log.Any("node", foundNode), log.String("host", task.Hosts[0]), log.Any("task", task))
+			plan.Deleted = append(plan.Deleted, task)
+			continue
 		}
 	}
 
@@ -213,88 +197,70 @@ func (d *TaskDiscovery) makeUpdatePlan(tasks []*models.Task, nodes *corev1.NodeL
 	return plan
 }
 
-// createManualTask processes manual node maintenance requests,
-// given as node annotations, and creates task if annotation with [ManualAnnotationPrefix] exists.
+// createTask processes node maintenance requests,
+// given as node annotations, and creates task if annotation with [TaskAnnotationPrefix] exists.
 //
-// For example, given the annotation `manual-drain-request/power-off: "Manual request due to host maintenance: ticket_key"`.
+// For example, given the annotation `yt-cms-request/any-text: "Manual request due to host maintenance: ticket_key"`.
 // Annotation key will become [walle.Task.Failure] and value will become [walle.Task.Comment].
-// Key's part after last '/' will become [walle.Task.Action] (affects node decommission speed). If action is unknown, action will be [walle.ActionReboot].
-//
-// Between two '/' in annotation key may be any, e.g. `manual-drain-request/any-data/power-off: ...`.
-// It can be filled if it is necessary for some reason to create two tasks with same action.
-func createManualTask(node corev1.Node) *models.Task {
-	for key, value := range node.Annotations {
-		if strings.HasPrefix(key, ManualAnnotationPrefix) {
-			parts := strings.Split(key, "/")
-			action := walle.HostAction(parts[len(parts)-1])
-			if !slices.Contains(walle.HostActions, action) {
-				action = walle.ActionReboot
-			}
-			id := generateTaskID()
-			task := &walle.Task{
-				ID:      walle.TaskID(id),
-				Type:    walle.TaskTypeManual,
-				Issuer:  ManualTaskIssuer,
-				Action:  action,
-				Hosts:   []string{node.Name},
-				Comment: value,
-				Failure: key,
-				MaintenanceInfo: &walle.MaintenanceInfo{
-					NodeSetID: id,
-				},
-			}
-
-			return newCMSTask(task)
+// Task action will be [walle.ActionReboot].
+func createTask(node corev1.Node, key string) *models.Task {
+	value := node.Annotations[key]
+	if strings.HasPrefix(key, TaskAnnotationPrefix) {
+		parts := strings.Split(key, "/")
+		issuer := TaskAnnotationPrefix
+		if len(parts) > 1 {
+			issuer = parts[1]
 		}
-	}
-	return nil
-}
-
-// createAgentTask processes agent (automatic) node maintenance requests,
-// given as node annotations, and creates task if necessary.
-//
-// Each check from [ActiveChecks] is done on node and if it's [CheckResult] requires action, new task is returned.
-func createAgentTask(node corev1.Node) *models.Task {
-	for _, check := range ActiveChecks {
-		if checkRes := check(node); checkRes.ActionRequired {
-			id := generateTaskID()
-			task := &walle.Task{
-				ID:      walle.TaskID(id),
-				Type:    walle.TaskTypeAutomated,
-				Issuer:  AgentTaskIssuer,
-				Action:  checkRes.Action,
-				Hosts:   []string{node.Name},
-				Comment: checkRes.Comment,
-				Failure: checkRes.Name,
-				MaintenanceInfo: &walle.MaintenanceInfo{
-					NodeSetID: id,
-				},
-			}
-			return newCMSTask(task)
+		id := generateTaskID()
+		task := &walle.Task{
+			ID:      walle.TaskID(id),
+			Type:    walle.TaskTypeManual,
+			Issuer:  issuer,
+			Action:  walle.ActionReboot,
+			Hosts:   []string{node.Name},
+			Comment: value,
+			Failure: key,
+			MaintenanceInfo: &walle.MaintenanceInfo{
+				NodeSetID: id,
+			},
 		}
+
+		return newCMSTask(task)
 	}
+
 	return nil
 }
 
 func newCMSTask(task *walle.Task) *models.Task {
+	hosts := map[string]*models.Host{}
+	for _, h := range task.Hosts {
+		hosts[h] = &models.Host{
+			Host:  h,
+			State: models.HostStateAccepted,
+			Roles: make(map[ypath.Path]*models.Component),
+		}
+	}
 	return &models.Task{
 		Task:            task,
-		Origin:          models.OriginWalle,
+		Origin:          models.OriginK8S,
 		YPInfo:          &models.YPMaintenanceInfo{},
 		ProcessingState: models.StateNew,
-		HostStates: map[string]*models.Host{
-			task.Hosts[0]: &models.Host{
-				Host:  task.Hosts[0],
-				State: models.HostStateAccepted,
-				Roles: make(map[ypath.Path]*models.Component),
-			},
-		},
-		WalleStatus: walle.StatusInProcess,
+		HostStates:      hosts,
+		WalleStatus:     walle.StatusInProcess,
 	}
 }
 
 func generateTaskID() string {
 	return uuid.New().String()
+}
+
+func findTask(tasks []*models.Task, host, failure string) *models.Task {
+	for _, t := range tasks {
+		if t.Failure == failure && slices.Contains(t.Hosts, host) {
+			return t
+		}
+	}
+	return nil
 }
 
 func findNode(nodes *corev1.NodeList, name string) *corev1.Node {

@@ -84,11 +84,12 @@ func (a *NodeAnnotator) annotateNodes(ctx context.Context) error {
 
 	tasksByNode := make(map[string][]*models.Task)
 	for _, t := range tasks {
-		if t.Origin != models.OriginWalle {
+		if t.Origin != models.OriginK8S {
 			continue
 		}
-		node := t.Hosts[0]
-		tasksByNode[node] = append(tasksByNode[node], t)
+		for _, h := range t.Hosts {
+			tasksByNode[h] = append(tasksByNode[h], t)
+		}
 	}
 
 	// Actualizing nodes' annotations according to task status.
@@ -97,10 +98,7 @@ func (a *NodeAnnotator) annotateNodes(ctx context.Context) error {
 		ts := tasksByNode[n.Name]
 		mustBe := ""
 		if len(ts) > 0 {
-			mustBe = string(ts[0].ProcessingState)
-			if ts[0].ProcessingState == models.StateConfirmedManually {
-				mustBe = string(models.StateProcessed)
-			}
+			mustBe = string(findMinProcessingState(ts))
 		}
 		status, annotated := n.Annotations[cmsStatusAnnotation]
 		if mustBe == "" && annotated {
@@ -116,6 +114,29 @@ func (a *NodeAnnotator) annotateNodes(ctx context.Context) error {
 		}
 	}
 	return lastError
+}
+
+func findMinProcessingState(tasks []*models.Task) models.TaskProcessingState {
+	values := map[models.TaskProcessingState]int{
+		models.StateNew:               0,
+		models.StatePending:           1,
+		models.StateDecommissioned:    2,
+		models.StateProcessed:         3,
+		models.StateConfirmedManually: 4,
+		models.StateFinished:          5,
+	}
+
+	min := tasks[0].ProcessingState
+	for _, t := range tasks[1:] {
+		if values[t.ProcessingState] < values[min] {
+			min = t.ProcessingState
+		}
+	}
+
+	if min == models.StateConfirmedManually {
+		return models.StateProcessed
+	}
+	return min
 }
 
 type Metadata struct {

@@ -50,6 +50,8 @@ type TaskOrigin string
 const (
 	// OriginWalle is a source of all tasks created via post http request by Wall-e directly.
 	OriginWalle TaskOrigin = "wall-e"
+	// OriginK8S is a source of all tasks created via annotating k8s-node.
+	OriginK8S TaskOrigin = "k8s"
 	// OriginYP is a source of all tasks polled from YP.
 	OriginYP TaskOrigin = "yp"
 )
