@@ -877,6 +877,11 @@ func (p *TaskProcessor) checkResourceLimits(ctx context.Context, task *models.Ta
 }
 
 func (p *TaskProcessor) checkGPULimits(ctx context.Context, task *models.Task, node *ytsys.Node, r *models.Node, tree *ytsys.PoolTree) bool {
+	if p.conf.SkipGPUReserveCheck {
+		p.l.Debug("skipping gpu reserve check", p.nodeLogFields(task, r)...)
+		return true
+	}
+
 	if node.ResourceLimits == nil {
 		p.l.Debug("node is missing resource limits -> waiting", p.nodeLogFields(task, r)...)
 		return false

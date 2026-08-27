@@ -140,6 +140,8 @@ type TaskProcessorConfig struct {
 	CPUReserve        float64 `yaml:"cpu_reserve"`
 	CPUReservePercent float64 `yaml:"cpu_reserve_percent"`
 	GPUReserve        float64 `yaml:"gpu_reserve"`
+	// SkipGPUReserveCheck completely skips gpu reserve check.
+	SkipGPUReserveCheck bool `yaml:"skip_gpu_reserve_check"`
 
 	UseReservePool  bool       `yaml:"use_reserve_pool"`
 	ReservePoolPath ypath.Path `yaml:"reserve_pool_path"`
