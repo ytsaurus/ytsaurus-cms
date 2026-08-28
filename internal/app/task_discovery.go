@@ -13,6 +13,9 @@ import (
 )
 
 type TaskDiscoveryConfig struct {
+	// Host suffix can be used if k8s-node' name is different from cluster' physical host.
+	// It will be appended to all nodes' names when task is created.
+	HostSuffix string `yaml:"host_suffix"`
 }
 
 type TaskDiscoverer struct {
@@ -45,14 +48,14 @@ func (d *TaskDiscoverer) runTaskDiscovery(ctx context.Context, conf *SystemConfi
 
 	g.Go(func() error {
 		l.Debug("starting k8s task discovery")
-		err := k8s.NewTaskDiscovery(&k8s.TaskDiscoveryConfig{}, l, storage, d.poller).Run(gctx)
+		err := k8s.NewTaskDiscovery(&k8s.TaskDiscoveryConfig{HostSuffix: conf.TaskDiscoveryConfig.HostSuffix}, l, storage, d.poller).Run(gctx)
 		l.Debug("stopped k8s task discovery")
 		return err
 	})
 
 	g.Go(func() error {
 		l.Debug("starting node annotator")
-		err := k8s.NewNodeAnnotator(&k8s.NodeAnnotatorConfig{}, l, storage, d.cs, d.poller).Run(gctx)
+		err := k8s.NewNodeAnnotator(&k8s.NodeAnnotatorConfig{HostSuffix: conf.TaskDiscoveryConfig.HostSuffix}, l, storage, d.cs, d.poller).Run(gctx)
 		l.Debug("stopped node annotator")
 		return err
 	})

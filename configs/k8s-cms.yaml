@@ -39,6 +39,8 @@ data:
       disable_auth: true
     clusters:
       - proxy: cluster_address
+        task_discovery_config:
+          host_suffix: ""
         bundle: default
         task_processing_period: 15s
         chunk_integrity_check_period: 10s

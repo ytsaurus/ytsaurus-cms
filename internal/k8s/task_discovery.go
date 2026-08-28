@@ -33,6 +33,7 @@ type Storage interface {
 
 type TaskDiscoveryConfig struct {
 	UpdatePeriod time.Duration
+	HostSuffix   string
 }
 
 type TaskDiscovery struct {
@@ -148,11 +149,12 @@ func (d *TaskDiscovery) makeUpdatePlan(tasks []*models.Task, nodes *corev1.NodeL
 
 	// Add new tasks.
 	for _, node := range nodes.Items {
-		for key := range node.Annotations {
-			if findTask(tasks, node.Name, key) != nil {
+		for key, value := range node.Annotations {
+			host := node.Name + d.conf.HostSuffix
+			if findTask(tasks, host, key) != nil {
 				continue
 			}
-			if t := createTask(node, key); t != nil {
+			if t := createTask(host, key, value); t != nil {
 				plan.Created = append(plan.Created, t)
 				continue
 			}
@@ -171,7 +173,7 @@ func (d *TaskDiscovery) makeUpdatePlan(tasks []*models.Task, nodes *corev1.NodeL
 
 		var foundNode *corev1.Node
 		for _, h := range task.Hosts {
-			node := findNode(nodes, h)
+			node := findNode(nodes, strings.TrimSuffix(h, d.conf.HostSuffix))
 			if node != nil {
 				foundNode = node
 				break
@@ -184,7 +186,7 @@ func (d *TaskDiscovery) makeUpdatePlan(tasks []*models.Task, nodes *corev1.NodeL
 		}
 
 		if _, ok := foundNode.Annotations[task.Failure]; !ok {
-			d.l.Info("task annotation is missing, deleting task", log.Any("node", foundNode), log.String("host", task.Hosts[0]), log.Any("task", task))
+			d.l.Info("task annotation is missing, deleting task", log.Any("node", foundNode), log.Strings("hosts", task.Hosts), log.Any("task", task))
 			plan.Deleted = append(plan.Deleted, task)
 			continue
 		}
@@ -203,8 +205,7 @@ func (d *TaskDiscovery) makeUpdatePlan(tasks []*models.Task, nodes *corev1.NodeL
 // For example, given the annotation `yt-cms-request/any-text: "Manual request due to host maintenance: ticket_key"`.
 // Annotation key will become [walle.Task.Failure] and value will become [walle.Task.Comment].
 // Task action will be [walle.ActionReboot].
-func createTask(node corev1.Node, key string) *models.Task {
-	value := node.Annotations[key]
+func createTask(host, key, value string) *models.Task {
 	if strings.HasPrefix(key, TaskAnnotationPrefix) {
 		parts := strings.Split(key, "/")
 		issuer := TaskAnnotationPrefix
@@ -217,17 +218,15 @@ func createTask(node corev1.Node, key string) *models.Task {
 			Type:    walle.TaskTypeManual,
 			Issuer:  issuer,
 			Action:  walle.ActionReboot,
-			Hosts:   []string{node.Name},
+			Hosts:   []string{host},
 			Comment: value,
 			Failure: key,
 			MaintenanceInfo: &walle.MaintenanceInfo{
 				NodeSetID: id,
 			},
 		}
-
 		return newCMSTask(task)
 	}
-
 	return nil
 }
 

@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"go.ytsaurus.tech/library/go/core/log"
@@ -20,6 +21,7 @@ const (
 
 type NodeAnnotatorConfig struct {
 	UpdatePeriod time.Duration
+	HostSuffix   string
 }
 
 type NodeAnnotator struct {
@@ -88,6 +90,7 @@ func (a *NodeAnnotator) annotateNodes(ctx context.Context) error {
 			continue
 		}
 		for _, h := range t.Hosts {
+			h = strings.TrimSuffix(h, a.conf.HostSuffix)
 			tasksByNode[h] = append(tasksByNode[h], t)
 		}
 	}
