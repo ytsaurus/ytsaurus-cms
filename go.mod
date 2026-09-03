@@ -19,7 +19,7 @@ require (
 	go.ytsaurus.tech/library/go/core/xerrors v0.0.4
 	go.ytsaurus.tech/library/go/httputil/middleware/httpmetrics v0.0.2
 	go.ytsaurus.tech/library/go/ptr v0.0.2
-	go.ytsaurus.tech/yt/go v0.0.32
+	go.ytsaurus.tech/yt/go v0.0.34
 	golang.org/x/sync v0.20.0
 	golang.org/x/time v0.14.0
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da

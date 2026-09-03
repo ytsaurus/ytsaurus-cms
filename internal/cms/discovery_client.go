@@ -71,6 +71,7 @@ type DiscoveryClient interface {
 	DestroyChunkLocations(ctx context.Context, addr *ytsys.Addr, recoverUnlinkedDisks bool, uuids []guid.GUID) ([]guid.GUID, error)
 	ResurrectChunkLocations(ctx context.Context, addr *ytsys.Addr, uuids []guid.GUID) ([]guid.GUID, error)
 	GetDiskIDsMismatched(ctx context.Context, node *ytsys.Node) (*bool, error)
+	GetDataNodeDiskInfos(ctx context.Context, node *ytsys.Node) ([]ytsys.DataNodeDiskInfo, error)
 	RequestRestart(ctx context.Context, addr *ytsys.Addr) error
 	GetNodeStartTime(ctx context.Context, node *ytsys.Node) (*yson.Time, error)
 }

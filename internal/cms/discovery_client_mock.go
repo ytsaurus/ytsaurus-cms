@@ -174,6 +174,21 @@ func (mr *MockDiscoveryClientMockRecorder) EnableWriteSessions(ctx, addr any) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnableWriteSessions", reflect.TypeOf((*MockDiscoveryClient)(nil).EnableWriteSessions), ctx, addr)
 }
 
+// GetDataNodeDiskInfos mocks base method.
+func (m *MockDiscoveryClient) GetDataNodeDiskInfos(ctx context.Context, node *ytsys.Node) ([]ytsys.DataNodeDiskInfo, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetDataNodeDiskInfos", ctx, node)
+	ret0, _ := ret[0].([]ytsys.DataNodeDiskInfo)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetDataNodeDiskInfos indicates an expected call of GetDataNodeDiskInfos.
+func (mr *MockDiscoveryClientMockRecorder) GetDataNodeDiskInfos(ctx, node any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDataNodeDiskInfos", reflect.TypeOf((*MockDiscoveryClient)(nil).GetDataNodeDiskInfos), ctx, node)
+}
+
 // GetDiskIDsMismatched mocks base method.
 func (m *MockDiscoveryClient) GetDiskIDsMismatched(ctx context.Context, node *ytsys.Node) (*bool, error) {
 	m.ctrl.T.Helper()
