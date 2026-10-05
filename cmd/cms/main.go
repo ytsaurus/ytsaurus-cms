@@ -19,12 +19,13 @@ func main() {
 	Adjust()
 
 	logToStderr := flag.Bool("log-to-stderr", false, "write logs to stderr")
+	logToFile := flag.Bool("log-to-file", true, "write logs to cms.log")
 	logDir := flag.String("log-dir", "/logs", "log output directory")
 	uaLogsURL := flag.String("ua-url", "", "url (host:port) for unified agent client")
 	configPath := flag.String("config", "", "path to the yaml config")
 	flag.Parse()
 
-	logger, stop := newLogger(*logToStderr, *logDir, WithUALogsURL(*uaLogsURL))
+	logger, stop := newLogger(*logToStderr, *logToFile, *logDir, WithUALogsURL(*uaLogsURL))
 	defer stop()
 
 	conf, err := readConfig(*configPath)

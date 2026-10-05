@@ -25,26 +25,28 @@ func WithUALogsURL(url string) Option {
 }
 
 // newLogger initializes debugging logger
-// that either writes to stderr or to cms.log in given directory.
-func newLogger(logToStderr bool, logDir string, options ...Option) (*logzap.Logger, func()) {
+// that writes to stderr and/or to cms.log in given directory.
+func newLogger(logToStderr, logToFile bool, logDir string, options ...Option) (*logzap.Logger, func()) {
 	var (
-		core zapcore.Core
-		stop func()
-		err  error
+		cores []zapcore.Core
+		stop  = func() {}
 	)
 
 	if logToStderr {
-		core = zapcore.NewCore(
+		cores = append(cores, zapcore.NewCore(
 			zapcore.NewJSONEncoder(ytlog.NewConfig().EncoderConfig),
 			zapcore.Lock(os.Stderr),
 			zapcore.DebugLevel,
-		)
-	} else {
-		core, stop, err = ytlog.NewSelfrotateCore(filepath.Join(logDir, "cms.log"), ytlog.WithMinFreeSpace(0.1))
+		))
+	}
+	if logToFile {
+		core, closeLogger, err := ytlog.NewSelfrotateCore(filepath.Join(logDir, "cms.log"), ytlog.WithMinFreeSpace(0.1))
 		if err != nil {
 			panic(err)
 		}
+		cores = append(cores, core)
+		stop = closeLogger
 	}
 
-	return logzap.NewWithCore(core, zap.AddCallerSkip(1), zap.AddCaller()), stop
+	return logzap.NewWithCore(zapcore.NewTee(cores...), zap.AddCallerSkip(1), zap.AddCaller()), stop
 }
