@@ -98,12 +98,6 @@ type TaskProcessorConfig struct {
 	// even if DMC > 0 or PMC > 0 or URC > %.
 	IgnorePMCThreshold int64 `yaml:"ignore_pmc_threshold"`
 
-	// yaml/v2 does not support nested structs for structs with custom unmarshaller:
-	// https://github.com/go-yaml/yaml/issues/125
-	// structs can only be inlined and no pointers are allowed.
-	// todo migrate to v3
-	MissingChunksThrottlerConfig MissingChunksThrottlerConfig `yaml:",inline"`
-
 	OfflineNodeRetentionPeriod time.Duration `yaml:"offline_node_retention_period"`
 	BannedNodeHoldOffPeriod    time.Duration `yaml:"banned_node_hold_off_period"`
 	MaxBannedNodeHoldOffPeriod time.Duration `yaml:"max_banned_node_hold_off_period"`
@@ -213,8 +207,6 @@ func (c *TaskProcessorConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return xerrors.Errorf("chunk integrity check period must be positive, got %s",
 			c.ChunkIntegrityCheckPeriod)
 	}
-
-	c.MissingChunksThrottlerConfig.init()
 
 	if c.MaxParallelGroupTasks <= 0 {
 		c.MaxParallelGroupTasks = defaultMaxParallelGroupTasks
@@ -380,8 +372,7 @@ type TaskProcessor struct {
 	// It becomes time.Now() if there are no new/pending tasks.
 	lastTaskProcessingTime time.Time
 
-	chunkIntegrity         *ytsys.ChunkIntegrity
-	missingChunksThrottler *MissingChunksThrottler
+	chunkIntegrity *ytsys.ChunkIntegrity
 
 	// Metrics.
 	taskProcessingLoop          metrics.Timer
@@ -440,7 +431,6 @@ func NewTaskProcessor(conf *TaskProcessorConfig, l log.Structured, schedulerOrch
 }
 
 func (p *TaskProcessor) reset(tasks []*models.Task) {
-	p.resetMissingChunksThrottler()
 	p.httpProxyRoleLimits = NewProxyRoleLimits(p.Conf().MaxHTTPProxiesPerRole, &httpProxyCache{c: p.cluster})
 	p.rpcProxyRoleLimits = NewProxyRoleLimits(p.Conf().MaxRPCProxiesPerRole, &rpcProxyCache{c: p.cluster})
 	p.initRateLimiter(tasks)
@@ -449,10 +439,6 @@ func (p *TaskProcessor) reset(tasks []*models.Task) {
 	p.nodeBanLimiter = NewNodeBanLimiter(p.conf.BannedNodeHoldOffPeriod, p.conf.MaxBannedNodeHoldOffPeriod)
 	p.initLastNodeBanTime(tasks)
 	p.initLastTaskProcessingTime(tasks)
-}
-
-func (p *TaskProcessor) resetMissingChunksThrottler() {
-	p.missingChunksThrottler = NewMissingChunksThrottler(&p.conf.MissingChunksThrottlerConfig)
 }
 
 func (p *TaskProcessor) resetReservePool(tasks []*models.Task) {
@@ -797,10 +783,6 @@ func (p *TaskProcessor) runHostAnnotator(ctx context.Context) error {
 }
 
 func (p *TaskProcessor) checkChunkIntegrity(ctx context.Context) error {
-	defer func() {
-		p.missingChunksThrottler.OnChunkIntegrityUpdate(p.chunkIntegrity)
-	}()
-
 	i, err := p.dc.GetIntegrityIndicators(ctx)
 	if err != nil {
 		p.l.Error("chunk integrity update failed", log.Error(err))
@@ -1139,14 +1121,6 @@ func (p *TaskProcessor) makeProcessingPlan(ctx context.Context, tasks []*models.
 	// Add new tasks.
 	for _, t := range accepted {
 		addNewTask(t)
-	}
-
-	if err := p.missingChunksThrottler.Allow(); err != nil {
-		p.l.Debug("throttling task processing due to missing part chunks", log.Error(err))
-		for _, t := range other {
-			p.tryUpdateWalleDescription(ctx, t, fmt.Sprintf("throttling task processing due to missing part chunks: %s", err.Error()))
-		}
-		return ret
 	}
 
 	p.l.Debug("chunk integrity", log.String("indicators", p.chunkIntegrity.String()))
